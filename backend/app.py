@@ -5,15 +5,20 @@ import pandas as pd
 import numpy as np
 from werkzeug.utils import secure_filename
 import os
-from io import BytesIO
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend communication
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000", "https://yourfrontend.com"],
+        "methods": ["GET", "POST"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
-MODEL_PATH = 'model.pt'  # Path to your .pt model file
+MODEL_PATH = "C:/Users/fahad/OneDrive/Desktop/NASA/mlp_kepler_20251003_205847_min.pt"  # Path to your .pt model file
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB max file size
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -24,25 +29,40 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Expected columns from your specification
 EXPECTED_COLUMNS = [
-    'kepid', 'koi_disposition', 'koi_dicco_msky', 'koi_dikco_msky', 'koi_prad',
-    'koi_smet_err2', 'koi_max_mult_ev', 'koi_model_snr', 'koi_steff_err1',
-    'koi_smet_err1', 'koi_prad_err2', 'koi_steff_err2', 'koi_ror',
-    'koi_prad_err1', 'koi_duration_err1', 'koi_duration_err2',
-    'koi_fittype_LS+MCMC', 'koi_count', 'koi_fwm_sdec_err', 'koi_fwm_srao_err',
-    'koi_fwm_sdeco_err', 'koi_srad_err1', 'koi_ror_err2', 'koi_dor',
-    'koi_smass_err1', 'koi_fwm_stat_sig', 'koi_ror_err1', 'koi_fwm_sra_err',
-    'koi_time0bk_err1', 'koi_time0bk_err2', 'koi_depth', 'koi_time0_err1'
+    'kepid', 'koi_disposition', 'koi_dicco_msky',
+    'koi_dikco_msky', 'koi_prad', 'koi_smet_err2',
+    'koi_max_mult_ev', 'koi_model_snr', 'koi_steff_err1',
+    'koi_smet_err1', 'koi_prad_err2', 'koi_steff_err2',
+    'koi_ror', 'koi_prad_err1', 'koi_duration_err1',
+    'koi_duration_err2', 'koi_fittype_LS+MCMC', 'koi_count',
+    'koi_fwm_sdec_err', 'koi_fwm_srao_err', 'koi_fwm_sdeco_err',
+    'koi_srad_err1', 'koi_ror_err2', 'koi_dor',
+    'koi_smass_err1', 'koi_fwm_stat_sig', 'koi_ror_err1',
+    'koi_fwm_sra_err', 'koi_time0bk_err1', 'koi_time0bk_err2',
+    'koi_depth', 'koi_time0_err1'
+
 ]
 
 # Load model at startup
-try:
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = torch.load(MODEL_PATH, map_location=device)
-    model.eval()
-    print(f"Model loaded successfully on {device}")
-except Exception as e:
-    print(f"Error loading model: {e}")
-    model = None
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = None
+
+if os.path.exists(MODEL_PATH):
+    try:
+        try:
+            model = torch.load(MODEL_PATH, map_location=device)
+            model.eval()
+            print(f"✓ Model loaded successfully on {device}")
+        except Exception as e:
+            print(f"✗ Error loading model: {e}")
+            model = None
+
+    except Exception as e:
+        print(f"✗ Error loading model: {e}")
+        model = None
+else:
+    print(f"⚠ Model file not found: {MODEL_PATH}")
+    print(f"  Backend will run in TEST MODE (no predictions available)")
 
 
 def allowed_file(filename):
@@ -124,14 +144,94 @@ def run_inference(data):
     return predictions
 
 
+@app.route('/', methods=['GET'])
+def home():
+    """Home endpoint"""
+    return jsonify({
+        'message': 'Exoplanet Prediction Backend is running!',
+        'status': 'online',
+        'model_loaded': model is not None,
+        'endpoints': {
+            '/': 'Home page',
+            '/health': 'Health check',
+            '/columns': 'Get expected columns (GET)',
+            '/test-upload': 'Test file upload without model (POST)',
+            '/predict': 'Single file prediction (POST) - requires model',
+            '/batch-predict': 'Multiple file predictions (POST) - requires model'
+        }
+    })
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'model_loaded': model is not None,
-        'device': str(device) if model is not None else 'N/A'
+        'device': str(device)
     })
+
+
+@app.route('/columns', methods=['GET'])
+def get_expected_columns():
+    """Return list of expected columns"""
+    return jsonify({
+        'columns': EXPECTED_COLUMNS,
+        'count': len(EXPECTED_COLUMNS)
+    })
+
+
+@app.route('/test-upload', methods=['POST'])
+def test_upload():
+    """
+    Test file upload without running model inference
+    Good for testing before model is ready
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'Empty filename'}), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({
+                'error': f'Invalid file type. Allowed: {", ".join(ALLOWED_EXTENSIONS)}'
+            }), 400
+        
+        # Read file
+        df = read_file(file)
+        
+        # Validate columns
+        is_valid, message = validate_columns(df)
+        
+        # Get file info
+        present_cols = set(df.columns) & set(EXPECTED_COLUMNS)
+        missing_cols = set(EXPECTED_COLUMNS) - set(df.columns)
+        
+        return jsonify({
+            'success': True,
+            'message': 'File read successfully!',
+            'file_info': {
+                'filename': file.filename,
+                'rows': len(df),
+                'columns': len(df.columns)
+            },
+            'validation': {
+                'all_required_present': is_valid,
+                'present_columns': len(present_cols),
+                'missing_columns': list(missing_cols) if missing_cols else []
+            },
+            'sample_data': df.head(3).to_dict('records')
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500
 
 
 @app.route('/predict', methods=['POST'])
@@ -252,14 +352,19 @@ def batch_predict():
         }), 500
 
 
-@app.route('/columns', methods=['GET'])
-def get_expected_columns():
-    """Return list of expected columns"""
-    return jsonify({
-        'columns': EXPECTED_COLUMNS,
-        'count': len(EXPECTED_COLUMNS)
-    })
-
-
 if __name__ == '__main__':
+    print("=" * 60)
+    print("🚀 Exoplanet Prediction Backend")
+    print("=" * 60)
+    print(f"Model Status: {'✓ Loaded' if model else '✗ Not loaded (TEST MODE)'}")
+    print(f"Device: {device}")
+    print("\nEndpoints:")
+    print("  • http://localhost:5000/          - Home")
+    print("  • http://localhost:5000/health    - Health check")
+    print("  • http://localhost:5000/columns   - Get expected columns")
+    print("  • http://localhost:5000/test-upload - Test file upload (no model)")
+    if model:
+        print("  • http://localhost:5000/predict   - Run predictions")
+        print("  • http://localhost:5000/batch-predict - Batch predictions")
+    print("=" * 60)
     app.run(debug=True, host='0.0.0.0', port=5000)

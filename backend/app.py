@@ -18,9 +18,14 @@ CORS(app, resources={
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
-MODEL_PATH = "C:/Users/fahad/OneDrive/Desktop/NASA/mlp_kepler_20251003_205847_min.pt"  # Path to your .pt model file
-model_path     = r"C:/Users/fahad/OneDrive/Desktop/NASA/mlp_kepler_20251003_205847_min.pt"     # your current minimal ckpt
-# NEW_ROWS_PATH  = r""         # CSV to predict on
+
+# Get the directory where this script is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Look for .pt file in the same directory
+MODEL_FILENAME = "mlp_kepler_20251003_205847_min.pt"
+MODEL_PATH = os.path.join(BASE_DIR, MODEL_FILENAME)
+
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB max file size
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -42,28 +47,41 @@ EXPECTED_COLUMNS = [
     'koi_smass_err1', 'koi_fwm_stat_sig', 'koi_ror_err1',
     'koi_fwm_sra_err', 'koi_time0bk_err1', 'koi_time0bk_err2',
     'koi_depth', 'koi_time0_err1'
+]
 
+# Configuration for prediction
+TARGET_COL = "koi_disposition"
+DROP_ID_COLS = ["kepid"]
+SCALER = "standard"
+SEED = 42
+VAL_SIZE = 0.15
+TEST_SIZE = 0.15
+
+KEEP_COLS = [
+    "koi_dicco_msky","koi_dikco_msky","koi_prad","koi_smet_err2","koi_max_mult_ev","koi_model_snr",
+    "koi_steff_err1","koi_smet_err1","koi_prad_err2","koi_steff_err2","koi_ror","koi_prad_err1",
+    "koi_duration_err1","koi_duration_err2","koi_fittype_LS+MCMC","koi_count","koi_fwm_sdec_err",
+    "koi_fwm_srao_err","koi_fwm_sdeco_err","koi_srad_err1","koi_ror_err2","koi_dor","koi_smass_err1",
+    "koi_fwm_stat_sig","koi_ror_err1","koi_fwm_sra_err","koi_time0bk_err1","koi_time0bk_err2",
+    "koi_depth","koi_time0_err1"
 ]
 
 # Load model at startup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = None
+checkpoint = None
+
+print(f"Looking for model at: {MODEL_PATH}")
 
 if os.path.exists(MODEL_PATH):
     try:
-        try:
-            model = torch.load(MODEL_PATH, map_location=device)
-            model.eval()
-            print(f"✓ Model loaded successfully on {device}")
-        except Exception as e:
-            print(f"✗ Error loading model: {e}")
-            model = None
-
+        checkpoint = torch.load(MODEL_PATH, map_location=device)
+        print(f"✓ Model checkpoint loaded successfully on {device}")
     except Exception as e:
         print(f"✗ Error loading model: {e}")
-        model = None
+        checkpoint = None
 else:
     print(f"⚠ Model file not found: {MODEL_PATH}")
+    print(f"  Please place '{MODEL_FILENAME}' in the same directory as this script")
     print(f"  Backend will run in TEST MODE (no predictions available)")
 
 
@@ -97,69 +115,20 @@ def validate_columns(df):
     return True, "All required columns present"
 
 
-def preprocess_data(df):
-    """
-    Preprocess the data for model inference
-    Adjust this function based on your model's preprocessing requirements
-    """
-    # Create a copy to avoid modifying original
-    data = df.copy()
-    
-    # Select only the expected columns in the correct order
-    data = data[EXPECTED_COLUMNS]
-    
-    # Handle missing values - adjust strategy as needed
-    data = data.fillna(0)  # Or use data.dropna() or other strategies
-    
-    # Handle categorical columns if any (e.g., koi_disposition, koi_fittype_LS+MCMC)
-    # You may need to encode these based on your model's training
-    categorical_cols = ['koi_disposition', 'koi_fittype_LS+MCMC']
-    for col in categorical_cols:
-        if col in data.columns:
-            # Simple label encoding - adjust based on your model
-            data[col] = pd.Categorical(data[col]).codes
-    
-    # Convert to numpy array
-    data_array = data.values.astype(np.float32)
-    
-    return data_array
-
-
-def run_inference(data):
-    """
-    Run model inference on preprocessed data
-    Adjust based on your model's input/output format
-    """
-    if model is None:
-        raise Exception("Model not loaded")
-    
-    # Convert to tensor
-    input_tensor = torch.tensor(data, dtype=torch.float32).to(device)
-    
-    # Run inference
-    with torch.no_grad():
-        predictions = model(input_tensor)
-        
-        # Convert predictions to numpy
-        predictions = predictions.cpu().numpy()
-    
-    return predictions
-
-
 @app.route('/', methods=['GET'])
 def home():
     """Home endpoint"""
     return jsonify({
         'message': 'Exoplanet Prediction Backend is running!',
         'status': 'online',
-        'model_loaded': model is not None,
+        'model_loaded': checkpoint is not None,
+        'model_path': MODEL_PATH,
         'endpoints': {
             '/': 'Home page',
             '/health': 'Health check',
             '/columns': 'Get expected columns (GET)',
             '/test-upload': 'Test file upload without model (POST)',
             '/predict': 'Single file prediction (POST) - requires model',
-            '/batch-predict': 'Multiple file predictions (POST) - requires model'
         }
     })
 
@@ -169,8 +138,9 @@ def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'model_loaded': model is not None,
-        'device': str(device)
+        'model_loaded': checkpoint is not None,
+        'device': str(device),
+        'model_path': MODEL_PATH
     })
 
 
@@ -243,7 +213,17 @@ def predict():
     Expects: CSV or Excel file in form-data with key 'file'
     Returns: JSON with predictions
     """
-    try: 
+    temp_filepath = None
+    
+    try:
+        # Check if model is loaded
+        if checkpoint is None:
+            return jsonify({
+                'error': 'Model not loaded. Please ensure the model file is in the correct location.',
+                'model_path': MODEL_PATH,
+                'success': False
+            }), 503
+        
         # Check if file is present
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -263,31 +243,12 @@ def predict():
         temp_filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(temp_filepath)
 
-        NEW_ROWS_PATH = temp_filepath
-        TARGET_COL = "koi_disposition"
-        DROP_ID_COLS = ["kepid"]
-        SCALER = "standard"
-        SEED = 42
-        VAL_SIZE = 0.15
-        TEST_SIZE = 0.15
-
-        KEEP_COLS = [
-            "koi_dicco_msky","koi_dikco_msky","koi_prad","koi_smet_err2","koi_max_mult_ev","koi_model_snr",
-            "koi_steff_err1","koi_smet_err1","koi_prad_err2","koi_steff_err2","koi_ror","koi_prad_err1",
-            "koi_duration_err1","koi_duration_err2","koi_fittype_LS+MCMC","koi_count","koi_fwm_sdec_err",
-            "koi_fwm_srao_err","koi_fwm_sdeco_err","koi_srad_err1","koi_ror_err2","koi_dor","koi_smass_err1",
-            "koi_fwm_stat_sig","koi_ror_err1","koi_fwm_sra_err","koi_time0bk_err1","koi_time0bk_err2",
-            "koi_depth","koi_time0_err1"
-        ]
-
-        import numpy as np  # Removed 'os' from here
-        import torch
+        # Import required libraries
         from typing import List, Optional
         from sklearn.model_selection import train_test_split
         from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
         from sklearn.compose import ColumnTransformer
         from sklearn.pipeline import Pipeline
-        from sklearn.metrics import classification_report
         import torch.nn as nn
 
         # Minimal model definition (needed to load weights)
@@ -362,25 +323,24 @@ def predict():
             prep.fit(pd.concat([X_tr, y_tr], axis=1), target_col=target_col)
             return prep
 
-        # Load ckpt (may be minimal)
-        ckpt = torch.load(model_path, map_location="cpu")
-        bi = ckpt["build_info"]
+        # Load checkpoint
+        bi = checkpoint["build_info"]
         model_loaded = MLP(bi["input_dim"], bi["n_classes"])
-        model_loaded.load_state_dict(ckpt["state_dict"])
+        model_loaded.load_state_dict(checkpoint["state_dict"])
         model_loaded.eval()
         device_pred = "cuda" if torch.cuda.is_available() else "cpu"
         model_loaded.to(device_pred)
 
         # Use preprocessor from ckpt if present; else rebuild from TRAIN CSV
-        prep = ckpt.get("preprocessor", None)
+        prep = checkpoint.get("preprocessor", None)
         if prep is None:
             print("[INFO] Checkpoint has no preprocessor; restoring scaler/OHE from CSV.")
-            prep = restore_preprocessor_from_training(NEW_ROWS_PATH, TARGET_COL, DROP_ID_COLS,
+            prep = restore_preprocessor_from_training(temp_filepath, TARGET_COL, DROP_ID_COLS,
                                                     scaler=SCALER, seed=SEED, val_size=VAL_SIZE, test_size=TEST_SIZE)
 
         # Load inference CSV
-        df_src = pd.read_csv(NEW_ROWS_PATH)
-        print(f"[INFO] Loaded {len(df_src):,} rows from {NEW_ROWS_PATH}")
+        df_src = pd.read_csv(temp_filepath)
+        print(f"[INFO] Loaded {len(df_src):,} rows from {temp_filepath}")
 
         # Build features
         df_new = df_src.drop(columns=(DROP_ID_COLS + [TARGET_COL]), errors="ignore")
@@ -425,7 +385,8 @@ def predict():
         confidence_level = [bucket(p, m) for p, m in zip(pred_conf, pred_margin)]
 
         # Clean up temp file
-        os.remove(temp_filepath)
+        if temp_filepath and os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
 
         # Return results to frontend
         results = []
@@ -446,118 +407,13 @@ def predict():
     
     except Exception as e:
         # Clean up temp file if it exists
-        if 'temp_filepath' in locals() and os.path.exists(temp_filepath):
+        if temp_filepath and os.path.exists(temp_filepath):
             os.remove(temp_filepath)
         
-        return jsonify({
-            'error': str(e),
-            'success': False
-        }), 500
-    # try:
-    #     # Check if file is present
-    #     if 'file' not in request.files:
-    #         return jsonify({'error': 'No file provided'}), 400
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in /predict: {error_trace}")
         
-    #     file = request.files['file']
-        
-    #     # Check if file is empty
-    #     if file.filename == '':
-    #         return jsonify({'error': 'Empty filename'}), 400
-        
-    #     # Check file type
-    #     if not allowed_file(file.filename):
-    #         return jsonify({
-    #             'error': f'Invalid file type. Allowed types: {", ".join(ALLOWED_EXTENSIONS)}'
-    #         }), 400
-        
-    #     # Read file
-    #     df = read_file(file)
-        
-    #     # Validate columns
-    #     is_valid, message = validate_columns(df)
-    #     if not is_valid:
-    #         return jsonify({'error': message}), 400
-        
-    #     # Store original data for response
-    #     original_data = df.to_dict('records')
-        
-    #     # Preprocess data
-    #     processed_data = preprocess_data(df)
-        
-    #     # Run inference
-    #     predictions = run_inference(processed_data)
-        
-    #     # Format predictions based on your model output
-    #     # Adjust this based on whether your model outputs classes, probabilities, etc.
-    #     predictions_list = predictions.tolist()
-        
-    #     # Combine with original data
-    #     results = []
-    #     for i, row in enumerate(original_data):
-    #         results.append({
-    #             'input': row,
-    #             'prediction': predictions_list[i]
-    #         })
-        
-    #     return jsonify({
-    #         'success': True,
-    #         'count': df.shape[0],
-    #         'predictions': ''
-    #     })
-    
-    # except Exception as e:
-    #     return jsonify({
-    #         'error': str(e),
-    #         'success': False
-    #     }), 500
-
-
-@app.route('/batch-predict', methods=['POST'])
-def batch_predict():
-    """
-    Batch prediction endpoint for multiple files
-    Expects: Multiple CSV or Excel files
-    Returns: JSON with predictions for each file
-    """
-    try:
-        files = request.files.getlist('files')
-        
-        if not files:
-            return jsonify({'error': 'No files provided'}), 400
-        
-        all_results = []
-        
-        for file in files:
-            if not allowed_file(file.filename):
-                continue
-            
-            df = read_file(file)
-            is_valid, message = validate_columns(df)
-            
-            if not is_valid:
-                all_results.append({
-                    'filename': file.filename,
-                    'error': message,
-                    'success': False
-                })
-                continue
-            
-            processed_data = preprocess_data(df)
-            predictions = run_inference(processed_data)
-            
-            all_results.append({
-                'filename': file.filename,
-                'success': True,
-                'count': len(predictions),
-                'predictions': predictions.tolist()
-            })
-        
-        return jsonify({
-            'success': True,
-            'results': all_results
-        })
-    
-    except Exception as e:
         return jsonify({
             'error': str(e),
             'success': False
@@ -568,15 +424,16 @@ if __name__ == '__main__':
     print("=" * 60)
     print("🚀 Exoplanet Prediction Backend")
     print("=" * 60)
-    print(f"Model Status: {'✓ Loaded' if model else '✗ Not loaded (TEST MODE)'}")
+    print(f"Base Directory: {BASE_DIR}")
+    print(f"Model Path: {MODEL_PATH}")
+    print(f"Model Status: {'✓ Loaded' if checkpoint else '✗ Not loaded (TEST MODE)'}")
     print(f"Device: {device}")
     print("\nEndpoints:")
     print("  • http://localhost:5000/          - Home")
     print("  • http://localhost:5000/health    - Health check")
     print("  • http://localhost:5000/columns   - Get expected columns")
     print("  • http://localhost:5000/test-upload - Test file upload (no model)")
-    if model:
+    if checkpoint:
         print("  • http://localhost:5000/predict   - Run predictions")
-        print("  • http://localhost:5000/batch-predict - Batch predictions")
     print("=" * 60)
     app.run(debug=True, host='0.0.0.0', port=5000)

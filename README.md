@@ -4,6 +4,8 @@ Team: Five Guys
 Challenge: NASA Space Apps Challenge 2025 — A World Away: Hunting for Exoplanets with AI
 Mission Dataset: Kepler KOI (Kepler Objects of Interest) — NASA Exoplanet Archive
 
+Python 3.11 is required
+
 Project Overview
 PlanetExplorer is an AI-driven exoplanet classification system designed to help astronomers and citizen scientists identify likely exoplanets in large space telescope datasets. The system uses curated Kepler mission tabular data and a custom Multilayer Perceptron (MLP) neural network built in PyTorch to classify Kepler Objects of Interest (KOIs) into CONFIRMED planets, CANDIDATE planets, and FALSE POSITIVES.
 Our solution transforms curated NASA data into an interpretable model that can support discovery and outreach while remaining efficient enough to run on laptops or cloud notebooks.

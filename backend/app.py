@@ -19,6 +19,8 @@ CORS(app, resources={
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 MODEL_PATH = "C:/Users/fahad/OneDrive/Desktop/NASA/mlp_kepler_20251003_205847_min.pt"  # Path to your .pt model file
+model_path     = r"C:/Users/fahad/OneDrive/Desktop/NASA/mlp_kepler_20251003_205847_min.pt"     # your current minimal ckpt
+# NEW_ROWS_PATH  = r""         # CSV to predict on
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB max file size
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -241,25 +243,235 @@ def predict():
     Expects: CSV or Excel file in form-data with key 'file'
     Returns: JSON with predictions
     """
-    try:
+    try: 
         # Check if file is present
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
         
         file = request.files['file']
         
-        # Check if file is empty
         if file.filename == '':
             return jsonify({'error': 'Empty filename'}), 400
         
-        # Check file type
         if not allowed_file(file.filename):
             return jsonify({
                 'error': f'Invalid file type. Allowed types: {", ".join(ALLOWED_EXTENSIONS)}'
             }), 400
         
-        # Read file
-        df = read_file(file)
+        # Save file temporarily
+        filename = secure_filename(file.filename)
+        temp_filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(temp_filepath)
+
+        NEW_ROWS_PATH = temp_filepath
+        TARGET_COL = "koi_disposition"
+        DROP_ID_COLS = ["kepid"]
+        SCALER = "standard"
+        SEED = 42
+        VAL_SIZE = 0.15
+        TEST_SIZE = 0.15
+
+        KEEP_COLS = [
+            "koi_dicco_msky","koi_dikco_msky","koi_prad","koi_smet_err2","koi_max_mult_ev","koi_model_snr",
+            "koi_steff_err1","koi_smet_err1","koi_prad_err2","koi_steff_err2","koi_ror","koi_prad_err1",
+            "koi_duration_err1","koi_duration_err2","koi_fittype_LS+MCMC","koi_count","koi_fwm_sdec_err",
+            "koi_fwm_srao_err","koi_fwm_sdeco_err","koi_srad_err1","koi_ror_err2","koi_dor","koi_smass_err1",
+            "koi_fwm_stat_sig","koi_ror_err1","koi_fwm_sra_err","koi_time0bk_err1","koi_time0bk_err2",
+            "koi_depth","koi_time0_err1"
+        ]
+
+        import numpy as np  # Removed 'os' from here
+        import torch
+        from typing import List, Optional
+        from sklearn.model_selection import train_test_split
+        from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
+        from sklearn.compose import ColumnTransformer
+        from sklearn.pipeline import Pipeline
+        from sklearn.metrics import classification_report
+        import torch.nn as nn
+
+        # Minimal model definition (needed to load weights)
+        class MLP(nn.Module):
+            def __init__(self, input_dim: int, n_classes: int):
+                super().__init__()
+                self.net = nn.Sequential(
+                    nn.Linear(input_dim, 2048),
+                    nn.ReLU(),
+                    nn.Linear(2048, 1024),
+                    nn.ReLU(),
+                    nn.Linear(1024, 512),
+                    nn.ReLU(),
+                    nn.Linear(512, n_classes),
+                )
+            def forward(self, x):
+                if x.dim() > 2: x = x.view(x.size(0), -1)
+                return self.net(x)
+
+        # Minimal preprocessor used only if ckpt has none
+        class TabularPreprocessor:
+            def __init__(self, scaler: str = "standard"):
+                self.scaler = scaler
+                self.num_cols: List[str] = []
+                self.cat_cols: List[str] = []
+                self.ct: Optional[ColumnTransformer] = None
+                self.label_encoder: Optional[LabelEncoder] = None
+                self.feature_names_: List[str] = []
+            
+            def _make_num_pipeline(self):
+                if self.scaler == "standard":
+                    return Pipeline([("scaler", StandardScaler())])
+                elif self.scaler == "robust":
+                    from sklearn.preprocessing import RobustScaler
+                    return Pipeline([("scaler", RobustScaler())])
+                elif self.scaler == "minmax":
+                    from sklearn.preprocessing import MinMaxScaler
+                    return Pipeline([("scaler", MinMaxScaler())])
+                else:
+                    return "passthrough"
+            
+            def fit(self, df_train: pd.DataFrame, target_col: str):
+                feats = [c for c in df_train.columns if c != target_col]
+                obj_like = df_train[feats].select_dtypes(include=["object","category","bool"]).columns.tolist()
+                num_like = [c for c in feats if c not in obj_like]
+                self.num_cols, self.cat_cols = num_like, obj_like
+                self.ct = ColumnTransformer(
+                    [("num", self._make_num_pipeline(), self.num_cols),
+                    ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), self.cat_cols)],
+                    remainder="drop", verbose_feature_names_out=False
+                )
+                self.ct.fit(df_train[feats])
+                self.feature_names_ = list(self.ct.get_feature_names_out())
+                return target_col
+            
+            def transform_X(self, df: pd.DataFrame) -> np.ndarray:
+                return self.ct.transform(df[self.num_cols + self.cat_cols]).astype(np.float32)
+
+        def restore_preprocessor_from_training(train_path: str, target_col: str, drop_id_cols: List[str],
+            scaler: str = "standard", seed: int = 42,
+            val_size: float = 0.15, test_size: float = 0.15) -> TabularPreprocessor:
+            df = pd.read_csv(train_path, low_memory=False)
+            df = df.drop(columns=[c for c in drop_id_cols if c in df.columns], errors="ignore")
+            if target_col not in df.columns:
+                raise ValueError(f"Target '{target_col}' not in CSV")
+            y_all = df[target_col]
+            X_all = df.drop(columns=[target_col])
+            strat = y_all if y_all.value_counts().min() >= 2 and y_all.nunique() > 1 else None
+            X_tr, X_tmp, y_tr, _ = train_test_split(X_all, y_all, test_size=(val_size+test_size),
+                                                    stratify=strat, random_state=seed)
+            prep = TabularPreprocessor(scaler=scaler)
+            prep.fit(pd.concat([X_tr, y_tr], axis=1), target_col=target_col)
+            return prep
+
+        # Load ckpt (may be minimal)
+        ckpt = torch.load(model_path, map_location="cpu")
+        bi = ckpt["build_info"]
+        model_loaded = MLP(bi["input_dim"], bi["n_classes"])
+        model_loaded.load_state_dict(ckpt["state_dict"])
+        model_loaded.eval()
+        device_pred = "cuda" if torch.cuda.is_available() else "cpu"
+        model_loaded.to(device_pred)
+
+        # Use preprocessor from ckpt if present; else rebuild from TRAIN CSV
+        prep = ckpt.get("preprocessor", None)
+        if prep is None:
+            print("[INFO] Checkpoint has no preprocessor; restoring scaler/OHE from CSV.")
+            prep = restore_preprocessor_from_training(NEW_ROWS_PATH, TARGET_COL, DROP_ID_COLS,
+                                                    scaler=SCALER, seed=SEED, val_size=VAL_SIZE, test_size=TEST_SIZE)
+
+        # Load inference CSV
+        df_src = pd.read_csv(NEW_ROWS_PATH)
+        print(f"[INFO] Loaded {len(df_src):,} rows from {NEW_ROWS_PATH}")
+
+        # Build features
+        df_new = df_src.drop(columns=(DROP_ID_COLS + [TARGET_COL]), errors="ignore")
+        expected_raw = getattr(prep, "num_cols", []) + getattr(prep, "cat_cols", [])
+        allowed_cols = sorted(set(KEEP_COLS).union(expected_raw))
+        df_new = df_new.filter(allowed_cols, axis=1)
+        for c in expected_raw:
+            if c not in df_new.columns:
+                df_new[c] = np.nan
+        df_new = df_new[expected_raw]
+
+        # Numeric cleanup & impute from scaler means if available
+        num_cols = getattr(prep, "num_cols", [])
+        if num_cols:
+            df_new[num_cols] = df_new[num_cols].apply(pd.to_numeric, errors="coerce")
+            scaler_pipe = prep.ct.named_transformers_.get("num", None)
+            scaler_obj = getattr(getattr(scaler_pipe, "named_steps", {}), "get", lambda *_: None)("scaler")
+            if scaler_obj is not None and hasattr(scaler_obj, "mean_"):
+                means = pd.Series(scaler_obj.mean_, index=num_cols)
+                df_new[num_cols] = df_new[num_cols].fillna(means)
+            else:
+                df_new[num_cols] = df_new[num_cols].fillna(0.0)
+
+        # Predict
+        X_new = prep.transform_X(df_new).astype(np.float32)
+        with torch.no_grad():
+            logits = model_loaded(torch.from_numpy(X_new).to(device_pred))
+            probs = torch.softmax(logits, dim=1).cpu().numpy()
+
+        pred_idx = probs.argmax(axis=1)
+        pred_conf = probs.max(axis=1)
+        class_names = bi["class_names"]
+        pred_label = [class_names[i] for i in pred_idx]
+
+        top2_idx = np.argsort(probs, axis=1)[:, -2]
+        top2_prob = probs[np.arange(len(probs)), top2_idx]
+        pred_margin = pred_conf - top2_prob
+
+        def bucket(p, m):
+            return "High" if (p>=0.90 and m>=0.30) else ("Medium" if (p>=0.75 and m>=0.15) else "Low")
+
+        confidence_level = [bucket(p, m) for p, m in zip(pred_conf, pred_margin)]
+
+        # Clean up temp file
+        os.remove(temp_filepath)
+
+        # Return results to frontend
+        results = []
+        for i in range(len(pred_label)):
+            results.append({
+                'row': int(i),
+                'prediction': pred_label[i],
+                'confidence': float(pred_conf[i]),
+                'margin': float(pred_margin[i]),
+                'confidence_level': confidence_level[i]
+            })
+
+        return jsonify({
+            'success': True,
+            'count': len(results),
+            'predictions': results
+        })
+    
+    except Exception as e:
+        # Clean up temp file if it exists
+        if 'temp_filepath' in locals() and os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+        
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500
+    # try:
+    #     # Check if file is present
+    #     if 'file' not in request.files:
+    #         return jsonify({'error': 'No file provided'}), 400
+        
+    #     file = request.files['file']
+        
+    #     # Check if file is empty
+    #     if file.filename == '':
+    #         return jsonify({'error': 'Empty filename'}), 400
+        
+    #     # Check file type
+    #     if not allowed_file(file.filename):
+    #         return jsonify({
+    #             'error': f'Invalid file type. Allowed types: {", ".join(ALLOWED_EXTENSIONS)}'
+    #         }), 400
+        
+    #     # Read file
+    #     df = read_file(file)
         
     #     # Validate columns
     #     is_valid, message = validate_columns(df)
@@ -287,17 +499,17 @@ def predict():
     #             'prediction': predictions_list[i]
     #         })
         
-        return jsonify({
-            'success': True,
-            'count': df.shape[0],
-            'predictions': ''
-        })
+    #     return jsonify({
+    #         'success': True,
+    #         'count': df.shape[0],
+    #         'predictions': ''
+    #     })
     
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'success': False
-        }), 500
+    # except Exception as e:
+    #     return jsonify({
+    #         'error': str(e),
+    #         'success': False
+    #     }), 500
 
 
 @app.route('/batch-predict', methods=['POST'])

@@ -1,9 +1,57 @@
-#!/usr/bin/env python3
-"""
-PlanetExplorer - NASA Space Apps Challenge 2025
-Complete web application generator with enhanced animations
-"""
+import http.server
+import socketserver
+import webbrowser
+import os
+import sys
 
+
+def serve_locally(html_file="planetexplorer_final.html", port=8000):
+    """Start a local HTTP server and open the HTML file in browser"""
+    
+    # Check if HTML file exists
+    if not os.path.exists(html_file):
+        print(f"⚠️  {html_file} not found. Generating it first...")
+        return False
+    
+    # Get the directory containing the HTML file
+    html_dir = os.path.dirname(os.path.abspath(html_file))
+    html_filename = os.path.basename(html_file)
+    
+    # Change to the directory containing the HTML file
+    if html_dir:
+        os.chdir(html_dir)
+    
+    # Create server
+    Handler = http.server.SimpleHTTPRequestHandler
+    
+    try:
+        with socketserver.TCPServer(("", port), Handler) as httpd:
+            url = f"http://localhost:{port}/{html_filename}"
+            print("=" * 70)
+            print(f"🌐 Local server started at: {url}")
+            print(f"📂 Serving from: {os.getcwd()}")
+            print("=" * 70)
+            print("\n✨ Opening browser...")
+            print("⏹️  Press Ctrl+C to stop the server\n")
+            
+            # Open browser
+            webbrowser.open(url)
+            
+            # Keep server running
+            httpd.serve_forever()
+            
+    except KeyboardInterrupt:
+        print("\n\n🛑 Server stopped by user")
+        sys.exit(0)
+    except OSError as e:
+        if e.errno == 48 or e.errno == 98:  # Address already in use
+            print(f"⚠️  Port {port} is already in use. Try another port.")
+            print(f"   Run with a different port number")
+        else:
+            print(f"❌ Error starting server: {e}")
+        return False
+    
+    return True
 
 def generate_html():
     """Generate complete HTML with enhanced background animations"""
@@ -2100,9 +2148,7 @@ NASA Space Apps Challenge 2025
 
 
 def main():
-    """Main execution function"""
     print("=" * 70)
-    print("🚀 PlanetExplorer - FINAL VERSION")
     print("   NASA Space Apps Challenge 2025")
     print("=" * 70)
     print()
@@ -2113,22 +2159,11 @@ def main():
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print(f"✅ Successfully generated {output_file}")
-    print(f"📦 File size: {len(html_content):,} bytes")
-    print()
-    print("🎨 NEW FEATURES:")
-    print("   ✓ Enhanced loading screen with:")
-    print("     - Animated telescope icon")
-    print("     - Multi-layer spinning rings")
-    print("     - Pulsing orb at center")
-    print("     - Progress bar animation")
-    print("     - Stage-by-stage updates")
-    print("     - Floating analysis icons")
-    print("   ✓ Download Report (generates .txt file)")
-    print("   ✓ View Raw Data (displays JSON with syntax highlighting)")
-    print("   ✓ Renamed 'Begin Analysis' to 'Begin Exploring'")
-    print()
     print("=" * 70)
+    
+    # Start local server automatically
+    print("Starting local server...\n")
+    serve_locally(output_file)
 
 
 if __name__ == "__main__":

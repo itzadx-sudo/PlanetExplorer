@@ -9,7 +9,7 @@ import os
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:3000", "https://yourfrontend.com"],
+        "origins": ["http://localhost:3000", "http://localhost:8000", "https://yourfrontend.com"],
         "methods": ["GET", "POST"],
         "allow_headers": ["Content-Type"]
     }
@@ -261,36 +261,36 @@ def predict():
         # Read file
         df = read_file(file)
         
-        # Validate columns
-        is_valid, message = validate_columns(df)
-        if not is_valid:
-            return jsonify({'error': message}), 400
+    #     # Validate columns
+    #     is_valid, message = validate_columns(df)
+    #     if not is_valid:
+    #         return jsonify({'error': message}), 400
         
-        # Store original data for response
-        original_data = df.to_dict('records')
+    #     # Store original data for response
+    #     original_data = df.to_dict('records')
         
-        # Preprocess data
-        processed_data = preprocess_data(df)
+    #     # Preprocess data
+    #     processed_data = preprocess_data(df)
         
-        # Run inference
-        predictions = run_inference(processed_data)
+    #     # Run inference
+    #     predictions = run_inference(processed_data)
         
-        # Format predictions based on your model output
-        # Adjust this based on whether your model outputs classes, probabilities, etc.
-        predictions_list = predictions.tolist()
+    #     # Format predictions based on your model output
+    #     # Adjust this based on whether your model outputs classes, probabilities, etc.
+    #     predictions_list = predictions.tolist()
         
-        # Combine with original data
-        results = []
-        for i, row in enumerate(original_data):
-            results.append({
-                'input': row,
-                'prediction': predictions_list[i]
-            })
+    #     # Combine with original data
+    #     results = []
+    #     for i, row in enumerate(original_data):
+    #         results.append({
+    #             'input': row,
+    #             'prediction': predictions_list[i]
+    #         })
         
         return jsonify({
             'success': True,
-            'count': len(results),
-            'predictions': results
+            'count': df.shape[0],
+            'predictions': ''
         })
     
     except Exception as e:

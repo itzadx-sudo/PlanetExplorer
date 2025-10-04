@@ -1812,57 +1812,54 @@
             }
         }
 
-        // Backend integration point - replace with actual API call
         async function processFile(file, fileName) {
             closeUploadModal();
             showLoading();
             currentFileName = fileName;
-
+        
             try {
-                // Parse CSV file
-                const text = await file.text();
-                const lines = text.split('\n').filter(line => line.trim() !== '');
-
-                if (lines.length <= 1) {
-                    alert('CSV file appears to be empty or has no data rows');
-                    return;
+                // Create FormData and append the file
+                const formData = new FormData();
+                formData.append('file', file);
+        
+                // Call your backend API
+                const response = await fetch('http://localhost:5000/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+        
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-
-                const headers = lines[0].split(',').map(h => h.trim());
-                console.log('CSV Headers:', headers);
-                console.log('Total rows:', lines.length - 1);
-
-                // Parse all data rows
-                allDataRows = [];
-                for (let i = 1; i < lines.length; i++) {
-                    const values = lines[i].split(',').map(v => v.trim());
-
-                    const rowData = {
-                        exoplanet_detected: Math.random() > 0.3,
-                        confidence: 0.7 + Math.random() * 0.25,
-                        planet_radius: parseFloat(values[0]) || (0.8 + Math.random() * 1.5),
-                        orbital_period: parseFloat(values[1]) || (5 + Math.random() * 25),
-                        transit_depth: parseFloat(values[2]) || (0.5 + Math.random() * 1.5),
-                        transit_duration: parseFloat(values[3]) || (2 + Math.random() * 3),
-                        row_number: i,
-                        timestamp: new Date().toISOString(),
-                        analysis_time: "2.4 seconds"
-                    };
-                    allDataRows.push(rowData);
+        
+                const jsonData = await response.json();
+                
+                if (jsonData.success) {
+                    // Store all predictions
+                    allDataRows = jsonData.predictions.map(pred => ({
+                        exoplanet_detected: pred.prediction === "CONFIRMED",
+                        confidence: pred.confidence,
+                        prediction_label: pred.prediction,
+                        confidence_level: pred.confidence_level,
+                        margin: pred.margin,
+                        row: pred.row,
+                        timestamp: new Date().toISOString()
+                    }));
+                    
+                    currentRowIndex = 0;
+                    
+                    // Show results after loading animation
+                    setTimeout(() => {
+                        displayResults(allDataRows[currentRowIndex], fileName);
+                    }, 3000);
+                } else {
+                    throw new Error(jsonData.error || 'Analysis failed');
                 }
-
-                console.log('Parsed rows:', allDataRows.length);
-                currentRowIndex = 0;
-
-                // Show results after loading animation
-                setTimeout(() => {
-                    displayResults(allDataRows[currentRowIndex], fileName);
-                }, 8000);
-
+                
             } catch (error) {
-                console.error('Error parsing CSV:', error);
-                alert('Error parsing CSV file. Please check the format.');
                 hideLoading();
+                alert(`Error: ${error.message}\n\nMake sure your backend is running on http://localhost:5000`);
+                console.error('Error details:', error);
             }
         }
         

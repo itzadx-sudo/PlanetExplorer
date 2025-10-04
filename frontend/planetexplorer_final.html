@@ -1,62 +1,4 @@
-import http.server
-import socketserver
-import webbrowser
-import os
-import sys
-
-
-def serve_locally(html_file="planetexplorer_final.html", port=8000):
-    """Start a local HTTP server and open the HTML file in browser"""
-    
-    # Check if HTML file exists
-    if not os.path.exists(html_file):
-        print(f"⚠️  {html_file} not found. Generating it first...")
-        return False
-    
-    # Get the directory containing the HTML file
-    html_dir = os.path.dirname(os.path.abspath(html_file))
-    html_filename = os.path.basename(html_file)
-    
-    # Change to the directory containing the HTML file
-    if html_dir:
-        os.chdir(html_dir)
-    
-    # Create server
-    Handler = http.server.SimpleHTTPRequestHandler
-    
-    try:
-        with socketserver.TCPServer(("", port), Handler) as httpd:
-            url = f"http://localhost:{port}/{html_filename}"
-            print("=" * 70)
-            print(f"🌐 Local server started at: {url}")
-            print(f"📂 Serving from: {os.getcwd()}")
-            print("=" * 70)
-            print("\n✨ Opening browser...")
-            print("⏹️  Press Ctrl+C to stop the server\n")
-            
-            # Open browser
-            webbrowser.open(url)
-            
-            # Keep server running
-            httpd.serve_forever()
-            
-    except KeyboardInterrupt:
-        print("\n\n🛑 Server stopped by user")
-        sys.exit(0)
-    except OSError as e:
-        if e.errno == 48 or e.errno == 98:  # Address already in use
-            print(f"⚠️  Port {port} is already in use. Try another port.")
-            print(f"   Run with a different port number")
-        else:
-            print(f"❌ Error starting server: {e}")
-        return False
-    
-    return True
-
-def generate_html():
-    """Generate complete HTML with enhanced background animations"""
-
-    html_content = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1960,7 +1902,9 @@ def generate_html():
                 
             } catch (error) {
                 hideLoading();
-                alert(`Error: ${error.message}\n\nMake sure your backend is running on http://localhost:5000`);
+                alert(`Error: ${error.message}
+
+Make sure your backend is running on http://localhost:5000`);
                 console.error('Error details:', error);
             }
         }
@@ -2071,7 +2015,7 @@ NASA Space Apps Challenge 2025
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `planetexplorer_report_$${currentFileName.replace(/\\.[^/.]+$/, "")}_$${Date.now()}.txt`;
+            a.download = `planetexplorer_report_$${currentFileName.replace(/\.[^/.]+$/, "")}_$${Date.now()}.txt`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -2095,7 +2039,7 @@ NASA Space Apps Challenge 2025
 
         function syntaxHighlight(json) {
             json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            return json.replace(/("(\\\\u[a-zA-Z0-9]{4}|\\\\[^u]|[^\\\\"])*"(\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function (match) {
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
                 let cls = 'json-number';
                 if (/^"/.test(match)) {
                     if (/:$/.test(match)) {
@@ -2165,29 +2109,3 @@ NASA Space Apps Challenge 2025
     </script>
 </body>
 </html>
-"""
-
-    return html_content
-
-
-def main():
-    print("=" * 70)
-    print("   NASA Space Apps Challenge 2025")
-    print("=" * 70)
-    print()
-
-    html_content = generate_html()
-
-    output_file = "planetexplorer_final.html"
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write(html_content)
-
-    print("=" * 70)
-    
-    # Start local server automatically
-    print("Starting local server...\n")
-    serve_locally(output_file)
-
-
-if __name__ == "__main__":
-    main()

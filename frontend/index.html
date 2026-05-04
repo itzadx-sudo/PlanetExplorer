@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlanetExplorer - NASA Space Apps Challenge 2025</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="animated-background" id="animatedBg">
+        <div class="milky-way"></div>
+        <div class="nebula nebula-1"></div>
+        <div class="nebula nebula-2"></div>
+        <div class="nebula nebula-3"></div>
+        <div class="cosmic-dust"></div>
+        <div class="stars"></div>
+        <div class="stars stars-layer2"></div>
+        <div class="stars stars-layer3"></div>
+        <div class="energy-wave"></div>
+        <div class="energy-wave"></div>
+        <div class="comet"></div>
+        <div class="comet"></div>
+        <div class="comet"></div>
+        <div class="shooting-star"></div>
+        <div class="shooting-star"></div>
+        <div class="shooting-star"></div>
+        <div class="shooting-star"></div>
+        <div class="solar-system">
+            <div class="sun"></div>
+            <div class="orbit orbit-1"></div>
+            <div class="orbit orbit-2"></div>
+            <div class="orbit orbit-3"></div>
+            <div class="orbit orbit-4"></div>
+            <div class="orbit orbit-5"></div>
+            <div class="planet mercury"></div>
+            <div class="planet venus"></div>
+            <div class="planet earth"></div>
+            <div class="planet mars"></div>
+            <div class="planet jupiter"></div>
+        </div>
+    </div>
+
+    <div class="section active" id="homeSection">
+        <div class="container">
+            <div class="hero">
+                <div class="hero-label">NASA SPACE APPS CHALLENGE 2025</div>
+                <h1 class="hero-title">Lumina</h1>
+            </div>
+
+            <div class="glass-card main-card">
+                <div class="sparkles-icon">✨</div>
+                <h2>Start Your Journey</h2>
+                <p>Using NASA's open data from Kepler and TESS missions, this AI-powered tool helps identify potential exoplanets through transit method analysis.</p>
+                <button class="cta-button" onclick="analyzeDataset()">
+                    <span>🔭</span>
+                    <span>Begin Exploring</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="section" id="resultsSection">
+        <div class="container">
+            <div class="results-header">
+                <h2>Analysis Results</h2>
+                <p class="filename" id="resultsFilename">kepler_data.csv</p>
+                <div class="status-badge detected" id="statusBadge">
+                    <span>✓</span>
+                    <span id="statusText">Exoplanet Detected</span>
+                </div>
+            </div>
+
+            <div class="glass-card confidence-card">
+                <div class="confidence-circle">
+                    <svg width="200" height="200">
+                        <defs>
+                            <linearGradient id="confidenceGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#00D4FF;stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:#7B61FF;stop-opacity:1" />
+                            </linearGradient>
+                        </defs>
+                        <circle class="confidence-bg" cx="100" cy="100" r="90"></circle>
+                        <circle class="confidence-progress" cx="100" cy="100" r="90"
+                                stroke-dasharray="565.48" stroke-dashoffset="113" id="confidenceCircle"></circle>
+                    </svg>
+                    <div class="confidence-value" id="confidenceValue">95%</div>
+                </div>
+                <div class="confidence-label">Detection Confidence</div>
+            </div>
+
+            <div class="results-actions">
+                <button class="action-btn btn-secondary" onclick="previousRow()" id="prevBtn">
+                    <span>←</span>
+                    <span>Previous</span>
+                </button>
+                <div class="row-indicator" id="rowIndicator">Row 1 of 1</div>
+                <button class="action-btn btn-secondary" onclick="nextRow()" id="nextBtn">
+                    <span>Next</span>
+                    <span>→</span>
+                </button>
+                <button class="action-btn btn-primary" onclick="analyzeAnother()">
+                    <span>🔄</span>
+                    <span>Analyze Another</span>
+                </button>
+                <button class="action-btn btn-secondary" onclick="downloadReport()">
+                    <span>📥</span>
+                    <span>Download Report</span>
+                </button>
+                <button class="action-btn btn-secondary" onclick="viewRawData()">
+                    <span>📊</span>
+                    <span>View Raw Data</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="telescope-animation"></div>
+
+            <div class="loading-spinner-container">
+                <div class="spinner-ring spinner-ring-1"></div>
+                <div class="spinner-ring spinner-ring-2"></div>
+                <div class="spinner-ring spinner-ring-3"></div>
+                <div class="loading-orb"></div>
+            </div>
+
+            <div class="loading-text">Analyzing Your Observations </div>
+            <div class="loading-stage" id="loadingStage">Initializing AI models...</div>
+
+            <div class="progress-container">
+                <div class="progress-bar"></div>
+            </div>
+
+            <div class="loading-subtext">
+                Scanning for exoplanets<br>
+                This may take a few moments...
+            </div>
+        </div>
+    </div>
+
+    <div class="raw-data-modal" id="rawDataModal">
+        <div class="raw-data-content">
+            <div class="raw-data-header">
+                <h3>Raw Analysis Data</h3>
+                <div class="raw-data-close" onclick="closeRawDataModal()">✕</div>
+            </div>
+            <div class="json-display" id="jsonDisplay"></div>
+        </div>
+    </div>
+
+    <div class="error-banner" id="errorBanner">
+        <span id="errorText"></span>
+        <button onclick="closeError()">✕</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

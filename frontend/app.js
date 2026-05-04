@@ -222,18 +222,18 @@ function closeRawDataModal() {
 }
 
 function syntaxHighlight(json) {
-    json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
-        let cls = 'json-number';
-        if (/^"/.test(match)) {
-            cls = /:$/.test(match) ? 'json-key' : 'json-string';
-        } else if (/true|false/.test(match)) {
-            cls = 'json-boolean';
-        } else if (/null/.test(match)) {
-            cls = 'json-null';
+    const getClass = (match) => {
+        if (!/^"/.test(match)) {
+            if (/true|false/.test(match)) return 'json-boolean';
+            if (/null/.test(match)) return 'json-null';
+            return 'json-number';
         }
-        return '<span class="' + cls + '">' + match + '</span>';
-    });
+        return /:$/.test(match) ? 'json-key' : 'json-string';
+    };
+    json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+        (match) => `<span class="${getClass(match)}">${match}</span>`
+    );
 }
 
 document.getElementById('rawDataModal').addEventListener('click', (e) => {

@@ -15,18 +15,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from model.mlp import ResidualMLP, ModelConfig, checkpoint_save
 from model.preprocessor import TabularPreprocessor
-
-def get_device(requested_device: str):
-    if requested_device == "auto":
-        try:
-            import mlx.core
-            return "mlx"
-        except ImportError:
-            pass
-        if torch.cuda.is_available():
-            return "cuda"
-        return "cpu"
-    return requested_device
+from model.device import get_device
+from model.mlx_model import build_mlx_model, copy_mlx_weights_to_pytorch_sd
 
 def train_pytorch(model, X_train, y_train, X_val, y_val, config, class_weights, device):
     print(f"Training on {device.upper()} using PyTorch...")
@@ -93,38 +83,9 @@ def train_mlx(pytorch_model, X_train, y_train, X_val, y_val, config, class_weigh
     import mlx.nn as mlx_nn
     import mlx.optimizers as optim
     
-    class MLXResidualBlock(mlx_nn.Module):
-        def __init__(self, dim: int, dropout: float):
-            super().__init__()
-            self.norm = mlx_nn.LayerNorm(dim)
-            self.fc1 = mlx_nn.Linear(dim, dim)
-            self.fc2 = mlx_nn.Linear(dim, dim)
-            self.dropout = mlx_nn.Dropout(p=dropout)
-
-        def __call__(self, x):
-            h = self.norm(x)
-            h = self.fc1(h)
-            h = mlx_nn.gelu(h)
-            h = self.dropout(h)
-            h = self.fc2(h)
-            return x + h
-
-    class MLXResidualMLP(mlx_nn.Module):
-        def __init__(self, input_dim: int, n_classes: int, config: ModelConfig):
-            super().__init__()
-            self.input_proj = mlx_nn.Linear(input_dim, config.hidden_dim)
-            self.blocks = [MLXResidualBlock(config.hidden_dim, config.dropout) for _ in range(config.num_blocks)]
-            self.head = mlx_nn.Linear(config.hidden_dim, n_classes)
-
-        def __call__(self, x):
-            x = self.input_proj(x)
-            for block in self.blocks:
-                x = block(x)
-            return self.head(x)
-
     input_dim = pytorch_model.input_proj.weight.shape[1]
     n_classes = pytorch_model.head.weight.shape[0]
-    model = MLXResidualMLP(input_dim, n_classes, config)
+    model = build_mlx_model(input_dim, n_classes, config)
     
     # Initialize parameters
     mx.eval(model.parameters())
@@ -192,28 +153,8 @@ def train_mlx(pytorch_model, X_train, y_train, X_val, y_val, config, class_weigh
     # Restore best state
     model.update(best_state)
     
-    # Translate MLX model back to PyTorch state_dict so we can use checkpoint_save
     sd = pytorch_model.state_dict()
-    
-    def pt(mx_arr):
-        return torch.from_numpy(np.array(mx_arr))
-        
-    sd["input_proj.weight"] = pt(best_state["input_proj"]["weight"])
-    if "bias" in best_state["input_proj"]:
-        sd["input_proj.bias"] = pt(best_state["input_proj"]["bias"])
-        
-    for i in range(config.num_blocks):
-        sd[f"blocks.{i}.block.0.weight"] = pt(best_state["blocks"][i]["norm"]["weight"])
-        sd[f"blocks.{i}.block.0.bias"] = pt(best_state["blocks"][i]["norm"]["bias"])
-        sd[f"blocks.{i}.block.1.weight"] = pt(best_state["blocks"][i]["fc1"]["weight"])
-        sd[f"blocks.{i}.block.1.bias"] = pt(best_state["blocks"][i]["fc1"]["bias"])
-        sd[f"blocks.{i}.block.4.weight"] = pt(best_state["blocks"][i]["fc2"]["weight"])
-        sd[f"blocks.{i}.block.4.bias"] = pt(best_state["blocks"][i]["fc2"]["bias"])
-        
-    sd["head.weight"] = pt(best_state["head"]["weight"])
-    if "bias" in best_state["head"]:
-        sd["head.bias"] = pt(best_state["head"]["bias"])
-        
+    copy_mlx_weights_to_pytorch_sd(sd, best_state, config)
     pytorch_model.load_state_dict(sd)
     return pytorch_model
 
@@ -231,7 +172,7 @@ def main():
     if args.batch_size:
         config.batch_size = args.batch_size
         
-    device = get_device(args.device)
+    device = get_device(args.device if args.device else "auto")
     
     print(f"Loading data from {args.train_file}...")
     df = pd.read_csv(args.train_file)

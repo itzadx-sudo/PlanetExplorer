@@ -1,13 +1,12 @@
-import os
 import argparse
+import os
+from pathlib import Path
+
 import pandas as pd
 import requests
 from sklearn.model_selection import train_test_split
 
 URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+*+from+cumulative&format=csv"
-RAW_FILE = "data/raw/kepler_koi_raw.csv"
-TRAIN_FILE = "data/processed/train.csv"
-TEST_FILE = "data/processed/test.csv"
 
 KEEP_COLS = [
     "koi_dicco_msky", "koi_dikco_msky", "koi_prad", "koi_smet_err2", "koi_max_mult_ev", "koi_model_snr",
@@ -18,77 +17,56 @@ KEEP_COLS = [
     "koi_depth", "koi_time0_err1"
 ]
 
-def download_data(force=False):
-    os.makedirs(os.path.dirname(RAW_FILE), exist_ok=True)
-    if os.path.exists(RAW_FILE) and not force:
-        print(f"Raw file {RAW_FILE} already exists. Skipping download.")
+
+def download_data(force: bool = False, base_dir: Path = Path(".")):
+    raw_file = base_dir / "data" / "raw" / "kepler_koi_raw.csv"
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    if raw_file.exists() and not force:
+        print(f"Raw file already exists, skipping download.")
         return
-    print(f"Downloading data from {URL}...")
+    print(f"Downloading from NASA Exoplanet Archive...")
     response = requests.get(URL)
     response.raise_for_status()
-    with open(RAW_FILE, 'wb') as f:
-        f.write(response.content)
-    print(f"Saved raw data to {RAW_FILE}")
+    raw_file.write_bytes(response.content)
+    print(f"Saved to {raw_file}")
 
-def preprocess_data():
-    print("Loading raw data...")
-    df = pd.read_csv(RAW_FILE)
-    
-    print("Preprocessing data...")
-    # Drop rows with dispositions we don't care about
-    valid_dispositions = {"CONFIRMED", "CANDIDATE", "FALSE POSITIVE"}
-    df = df[df["koi_disposition"].isin(valid_dispositions)]
-    
-    # Retain agreed columns + kepid and koi_disposition
+
+def preprocess_data(base_dir: Path = Path(".")):
+    raw_file = base_dir / "data" / "raw" / "kepler_koi_raw.csv"
+    train_file = base_dir / "data" / "processed" / "train.csv"
+    test_file = base_dir / "data" / "processed" / "test.csv"
+    train_file.parent.mkdir(parents=True, exist_ok=True)
+
+    print("Preprocessing...")
+    df = pd.read_csv(raw_file)
+
+    df = df[df["koi_disposition"].isin({"CONFIRMED", "CANDIDATE", "FALSE POSITIVE"})]
+
     cols_to_keep = ["kepid", "koi_disposition"] + KEEP_COLS
-    
-    # Ensure all columns exist, if not, they'll just be handled normally (pandas will raise KeyError, but we only select present ones)
-    present_cols = [c for c in cols_to_keep if c in df.columns]
-    df = df[present_cols]
-    
-    # Count missing values before cleaning
-    missing_before = df.isnull().sum().sum()
-    
-    # Drop any column with >0% missing values
-    # Actually, we first need to identify such columns in the feature set (excluding kepid and koi_disposition)
-    # The prompt says "across the retained set".
-    missing_pct = df.isnull().mean()
-    cols_to_drop = missing_pct[missing_pct > 0.0].index.tolist()
+    df = df[[c for c in cols_to_keep if c in df.columns]]
+
+    cols_to_drop = df.columns[df.isnull().mean() > 0.0].tolist()
     if cols_to_drop:
-        print(f"Dropping columns with >0% missing values: {cols_to_drop}")
+        print(f"Dropping columns with missing values: {cols_to_drop}")
         df = df.drop(columns=cols_to_drop)
-    
-    # Impute remaining NaNs with column median
-    # If we dropped all columns with >0% missing values, there shouldn't be any, but we still execute this step.
-    num_cols = df.select_dtypes(include=["number"]).columns
-    df[num_cols] = df[num_cols].fillna(df[num_cols].median())
-    
-    missing_after = df.isnull().sum().sum()
-    
-    print("Splitting data...")
-    os.makedirs(os.path.dirname(TRAIN_FILE), exist_ok=True)
-    
-    # Stratified 90/10 train-test split
+
     train_df, test_df = train_test_split(
         df, test_size=0.10, stratify=df["koi_disposition"], random_state=42
     )
-    
-    train_df.to_csv(TRAIN_FILE, index=False)
-    test_df.to_csv(TEST_FILE, index=False)
-    
-    print("\n--- Summary ---")
+
+    train_df.to_csv(train_file, index=False)
+    test_df.to_csv(test_file, index=False)
+
     print(f"Total rows: {len(df)}")
     print(f"Class distribution:\n{df['koi_disposition'].value_counts().to_string()}")
-    print(f"Missing values before cleaning: {missing_before}")
-    print(f"Missing values after cleaning: {missing_after}")
-    print(f"Train set shape: {train_df.shape}")
-    print(f"Test set shape: {test_df.shape}")
-    print("Preprocessing complete!")
+    print(f"Train: {train_df.shape}, Test: {test_df.shape}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download and preprocess Kepler dataset")
-    parser.add_argument("--force", action="store_true", help="Force download even if raw file exists")
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    
-    download_data(args.force)
-    preprocess_data()
+
+    root = Path(__file__).parent.parent
+    download_data(args.force, base_dir=root)
+    preprocess_data(base_dir=root)

@@ -28,6 +28,7 @@ model_obj = None
 preprocessor = None
 class_names = None
 device_str = "none"
+dataset_df = None
 
 if MODEL_PATH and os.path.exists(MODEL_PATH):
     try:
@@ -37,6 +38,13 @@ if MODEL_PATH and os.path.exists(MODEL_PATH):
         print(f"Error loading model: {e}")
 else:
     print(f"No model found at: {MODEL_PATH}")
+
+if os.path.exists(DATASET_PATH):
+    try:
+        dataset_df = pd.read_csv(DATASET_PATH)
+        print(f"Dataset cached: {len(dataset_df)} rows from {DATASET_PATH}")
+    except Exception as e:
+        print(f"Error loading dataset: {e}")
 
 
 @app.route("/")
@@ -59,12 +67,11 @@ def predict_dataset():
     if model_obj is None:
         return jsonify({"error": "Model not loaded.", "success": False}), 503
 
-    if not os.path.exists(DATASET_PATH):
-        return jsonify({"error": f"Dataset not found at {DATASET_PATH}.", "success": False}), 404
+    if dataset_df is None:
+        return jsonify({"error": "Dataset not available.", "success": False}), 404
 
     try:
-        df = pd.read_csv(DATASET_PATH)
-        results_df = predict(model_obj, preprocessor, df, class_names, device_str)
+        results_df = predict(model_obj, preprocessor, dataset_df, class_names, device_str)
 
         results = [
             {

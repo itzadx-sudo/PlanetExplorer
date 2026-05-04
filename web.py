@@ -10,8 +10,6 @@ Usage:
 """
 
 import argparse
-import importlib.util
-import os
 import sys
 import webbrowser
 from pathlib import Path
@@ -26,16 +24,9 @@ def ensure_dataset():
     if DATASET_PATH.exists():
         return
     print("Dataset not found. Downloading from NASA Exoplanet Archive...")
-    spec = importlib.util.spec_from_file_location("download", ROOT / "data" / "download.py")
-    dl = importlib.util.module_from_spec(spec)
-    orig_dir = os.getcwd()
-    os.chdir(ROOT)
-    try:
-        spec.loader.exec_module(dl)
-        dl.download_data()
-        dl.preprocess_data()
-    finally:
-        os.chdir(orig_dir)
+    from data.download import download_data, preprocess_data
+    download_data(base_dir=ROOT)
+    preprocess_data(base_dir=ROOT)
     print("Dataset ready.")
 
 

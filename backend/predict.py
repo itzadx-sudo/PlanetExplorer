@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import pickle
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,24 +12,39 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from model.mlp import ResidualMLP, ModelConfig, checkpoint_load
-from model.preprocessor import TabularPreprocessor  # noqa: F401 — must be imported before torch.load unpickles it
-
-# Checkpoints saved by train.py store TabularPreprocessor as __main__.TabularPreprocessor.
-# Register it under that name so torch.load can find it regardless of how this module is invoked.
-import __main__
-if not hasattr(__main__, "TabularPreprocessor"):
-    __main__.TabularPreprocessor = TabularPreprocessor
+from model.preprocessor import TabularPreprocessor
+from model.device import get_device
+from model.mlx_model import build_mlx_model, copy_pytorch_weights_to_mlx
 
 
-def _detect_device() -> str:
-    try:
-        import mlx.core  # noqa: F401
-        return "mlx"
-    except ImportError:
-        pass
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
+class _CompatUnpickler(pickle.Unpickler):
+    """Remaps __main__.TabularPreprocessor to its canonical module path.
+
+    Checkpoints trained via train.py pickle TabularPreprocessor under __main__
+    because it was defined at module level there. This lets old checkpoints load
+    without namespace pollution.
+    """
+    def find_class(self, module, name):
+        if module == "__main__" and name == "TabularPreprocessor":
+            return TabularPreprocessor
+        return super().find_class(module, name)
+
+
+class _CompatPickleModule:
+    """Minimal shim so torch.load accepts our custom unpickler."""
+    Unpickler = _CompatUnpickler
+
+    @staticmethod
+    def dump(obj, f):
+        pickle.dump(obj, f)
+
+    @staticmethod
+    def dumps(obj):
+        return pickle.dumps(obj)
+
+
+def _torch_load_compat(path: Path, map_location):
+    return torch.load(path, map_location=map_location, pickle_module=_CompatPickleModule, weights_only=False)
 
 
 def _bucket(prob: float, margin: float) -> str:
@@ -39,75 +56,35 @@ def _bucket(prob: float, margin: float) -> str:
 
 
 def load_model(checkpoint_path: str | Path, device: str = "auto") -> tuple[Any, Any, list[str], str]:
-    """Load checkpoint and return (model, preprocessor, class_names, resolved_device)."""
     checkpoint_path = Path(checkpoint_path)
-    resolved = _detect_device() if device == "auto" else device
+    resolved = get_device(device)
 
     if resolved == "mlx":
         model, config, preprocessor, class_names = _load_mlx(checkpoint_path)
     else:
-        model, config, preprocessor, class_names = checkpoint_load(checkpoint_path, device=resolved)
+        model, config, preprocessor, class_names = _load_pytorch(checkpoint_path, resolved)
 
     return model, preprocessor, class_names, resolved
 
 
+def _load_pytorch(checkpoint_path: Path, device: str):
+    ckpt = _torch_load_compat(checkpoint_path, map_location=device)
+    config = ModelConfig(**ckpt["config"])
+    model = ResidualMLP(input_dim=ckpt["input_dim"], n_classes=ckpt["n_classes"], config=config)
+    model.load_state_dict(ckpt["state_dict"])
+    model.to(device)
+    model.eval()
+    return model, config, ckpt["preprocessor"], ckpt["class_names"]
+
+
 def _load_mlx(checkpoint_path: Path):
     import mlx.core as mx
-    import mlx.nn as mlx_nn
-    import torch
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    ckpt = _torch_load_compat(checkpoint_path, map_location="cpu")
     config = ModelConfig(**ckpt["config"])
-
-    class MLXResidualBlock(mlx_nn.Module):
-        def __init__(self, dim: int, dropout: float):
-            super().__init__()
-            self.norm = mlx_nn.LayerNorm(dim)
-            self.fc1 = mlx_nn.Linear(dim, dim)
-            self.fc2 = mlx_nn.Linear(dim, dim)
-            self.dropout = mlx_nn.Dropout(p=dropout)
-
-        def __call__(self, x):
-            h = self.norm(x)
-            h = self.fc1(h)
-            h = mlx_nn.gelu(h)
-            h = self.dropout(h)
-            h = self.fc2(h)
-            return x + h
-
-    class MLXResidualMLP(mlx_nn.Module):
-        def __init__(self, input_dim: int, n_classes: int, config: ModelConfig):
-            super().__init__()
-            self.input_proj = mlx_nn.Linear(input_dim, config.hidden_dim)
-            self.blocks = [MLXResidualBlock(config.hidden_dim, config.dropout) for _ in range(config.num_blocks)]
-            self.head = mlx_nn.Linear(config.hidden_dim, n_classes)
-
-        def __call__(self, x):
-            x = self.input_proj(x)
-            for block in self.blocks:
-                x = block(x)
-            return self.head(x)
-
-    mlx_model = MLXResidualMLP(ckpt["input_dim"], ckpt["n_classes"], config)
-
-    # Copy weights from PyTorch checkpoint into MLX model
-    sd = ckpt["state_dict"]
-
-    def t(key: str):
-        return mx.array(sd[key].numpy())
-
-    mlx_model.input_proj.weight = t("input_proj.weight")
-    mlx_model.input_proj.bias = t("input_proj.bias")
-    for i in range(config.num_blocks):
-        mlx_model.blocks[i].norm.weight = t(f"blocks.{i}.block.0.weight")
-        mlx_model.blocks[i].norm.bias = t(f"blocks.{i}.block.0.bias")
-        mlx_model.blocks[i].fc1.weight = t(f"blocks.{i}.block.1.weight")
-        mlx_model.blocks[i].fc1.bias = t(f"blocks.{i}.block.1.bias")
-        mlx_model.blocks[i].fc2.weight = t(f"blocks.{i}.block.4.weight")
-        mlx_model.blocks[i].fc2.bias = t(f"blocks.{i}.block.4.bias")
-    mlx_model.head.weight = t("head.weight")
-    mlx_model.head.bias = t("head.bias")
-
+    mlx_model = build_mlx_model(ckpt["input_dim"], ckpt["n_classes"], config)
+    copy_pytorch_weights_to_mlx(mlx_model, ckpt["state_dict"], config)
+    mx.eval(mlx_model.parameters())
     return mlx_model, config, ckpt["preprocessor"], ckpt["class_names"]
 
 
@@ -118,15 +95,13 @@ def predict(
     class_names: list[str],
     device: str = "cpu",
 ) -> pd.DataFrame:
-    """Run inference and return a DataFrame with prediction columns appended."""
     X = preprocessor.transform_X(df).astype(np.float32)
 
     if device == "mlx":
         import mlx.core as mx
         import mlx.nn as mlx_nn
 
-        x_mx = mx.array(X)
-        logits = model(x_mx)
+        logits = model(mx.array(X))
         probs = np.array(mlx_nn.softmax(logits, axis=-1).tolist())
     else:
         with torch.no_grad():
@@ -136,17 +111,14 @@ def predict(
     pred_idx = probs.argmax(axis=1)
     pred_conf = probs.max(axis=1)
     top2_idx = np.argsort(probs, axis=1)[:, -2]
-    top2_prob = probs[np.arange(len(probs)), top2_idx]
-    margin = pred_conf - top2_prob
+    margin = pred_conf - probs[np.arange(len(probs)), top2_idx]
 
-    return pd.DataFrame(
-        {
-            "prediction": [class_names[i] for i in pred_idx],
-            "confidence": pred_conf.tolist(),
-            "margin": margin.tolist(),
-            "confidence_level": [_bucket(float(p), float(m)) for p, m in zip(pred_conf, margin)],
-        }
-    )
+    return pd.DataFrame({
+        "prediction": [class_names[i] for i in pred_idx],
+        "confidence": pred_conf.tolist(),
+        "margin": margin.tolist(),
+        "confidence_level": [_bucket(float(p), float(m)) for p, m in zip(pred_conf, margin)],
+    })
 
 
 def predict_csv(
@@ -154,7 +126,6 @@ def predict_csv(
     input_csv: str | Path,
     output_csv: str | Path | None = None,
 ) -> pd.DataFrame:
-    """Load a CSV, run inference, optionally write results, and return the results DataFrame."""
     model, preprocessor, class_names, device = load_model(checkpoint_path)
     df = pd.read_csv(input_csv)
     results = predict(model, preprocessor, df, class_names, device=device)

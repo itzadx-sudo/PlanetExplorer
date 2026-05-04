@@ -17,7 +17,5 @@ class TabularPreprocessor:
         return self
 
     def transform_X(self, df: pd.DataFrame) -> np.ndarray:
-        for col in self.feature_cols:
-            if col not in df.columns:
-                df[col] = 0.0
-        return self.scaler.transform(df[self.feature_cols])
+        df = df.reindex(columns=self.feature_cols, fill_value=0.0)
+        return self.scaler.transform(df)

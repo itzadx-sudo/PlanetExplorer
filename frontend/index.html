@@ -68,8 +68,7 @@
                 <h2>Begin Your Exploration</h2>
                 <p>Using 30 curated astrophysical features from NASA's Kepler telescope, our ResidualMLP model classifies 726 Kepler Objects of Interest into three categories with high accuracy.</p>
                 <button class="cta-button" onclick="analyzeDataset()">
-                    <span>🔭</span>
-                    <span>Analyze Dataset</span>
+                    Analyze Dataset
                 </button>
             </div>
 
@@ -265,9 +264,9 @@
                 <div class="filter-pills">
                     <span class="filter-label">Filter:</span>
                     <button class="filter-pill active" data-filter="all" onclick="setFilter('all')">All</button>
-                    <button class="filter-pill confirmed-pill" data-filter="CONFIRMED" onclick="setFilter('CONFIRMED')">✓ Confirmed</button>
-                    <button class="filter-pill candidate-pill" data-filter="CANDIDATE" onclick="setFilter('CANDIDATE')">? Candidate</button>
-                    <button class="filter-pill fp-pill" data-filter="FALSE POSITIVE" onclick="setFilter('FALSE POSITIVE')">✕ False Positive</button>
+                    <button class="filter-pill confirmed-pill" data-filter="CONFIRMED" onclick="setFilter('CONFIRMED')">Confirmed</button>
+                    <button class="filter-pill candidate-pill" data-filter="CANDIDATE" onclick="setFilter('CANDIDATE')">Candidate</button>
+                    <button class="filter-pill fp-pill" data-filter="FALSE POSITIVE" onclick="setFilter('FALSE POSITIVE')">False Positive</button>
                 </div>
                 <div class="row-nav-group">
                     <button class="nav-btn" onclick="previousRow()" id="prevBtn">← Prev</button>
@@ -283,18 +282,10 @@
 
             <!-- Action Buttons -->
             <div class="results-actions">
-                <button class="action-btn btn-primary" onclick="analyzeAnother()">
-                    <span>🔄</span><span>New Analysis</span>
-                </button>
-                <button class="action-btn btn-secondary" onclick="downloadReport()">
-                    <span>📥</span><span>Download Report</span>
-                </button>
-                <button class="action-btn btn-secondary" onclick="downloadAllReport()">
-                    <span>📦</span><span>Export All (CSV)</span>
-                </button>
-                <button class="action-btn btn-secondary" onclick="viewRawData()">
-                    <span>📊</span><span>Raw Data</span>
-                </button>
+                <button class="action-btn btn-primary" onclick="analyzeAnother()">New Analysis</button>
+                <button class="action-btn btn-secondary" onclick="downloadReport()">Download Report</button>
+                <button class="action-btn btn-secondary" onclick="downloadAllReport()">Export All (CSV)</button>
+                <button class="action-btn btn-secondary" onclick="viewRawData()">Raw Data</button>
             </div>
         </div>
     </div>

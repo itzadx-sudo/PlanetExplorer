@@ -699,27 +699,6 @@ body {
     line-height: 1.6;
 }
 
-.info-section {
-    margin-top: 48px;
-}
-
-.info-section h3 {
-    font-size: 28px;
-    font-weight: 700;
-    color: #ffffff;
-    margin-bottom: 20px;
-    text-align: center;
-}
-
-.info-section p {
-    font-size: 16px;
-    color: #A0A0A0;
-    line-height: 1.7;
-    text-align: center;
-    max-width: 800px;
-    margin: 0 auto 32px;
-}
-
 
 .loading-screen {
     display: none;
@@ -909,34 +888,6 @@ body {
     }
 }
 
-.analysis-icons {
-    display: flex;
-    justify-content: center;
-    gap: 30px;
-    margin-top: 30px;
-}
-
-.analysis-icon {
-    font-size: 40px;
-    opacity: 0;
-    animation: iconFadeIn 3s ease-in-out infinite;
-}
-
-.analysis-icon:nth-child(1) { animation-delay: 0s; }
-.analysis-icon:nth-child(2) { animation-delay: 0.5s; }
-.analysis-icon:nth-child(3) { animation-delay: 1s; }
-.analysis-icon:nth-child(4) { animation-delay: 1.5s; }
-
-@keyframes iconFadeIn {
-    0%, 100% {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    30%, 70% {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
 
 .results-header {
     display: flex;
@@ -960,32 +911,14 @@ body {
     font-weight: 500;
 }
 
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 24px;
-    border-radius: 50px;
-    font-size: 14px;
-    font-weight: 600;
-    margin-top: 16px;
-}
-
-.status-badge.detected {
-    background: rgba(46, 204, 113, 0.15);
-    border: 1px solid rgba(46, 204, 113, 0.3);
-    color: #2ECC71;
-}
-
-.status-badge.not-detected {
-    background: rgba(231, 76, 60, 0.15);
-    border: 1px solid rgba(231, 76, 60, 0.3);
-    color: #E74C3C;
-}
 
 .confidence-card {
     text-align: center;
-    padding: 40px;
+    padding: 36px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .confidence-circle {
@@ -1032,99 +965,7 @@ body {
     font-weight: 600;
 }
 
-.confidence-label-secondary {
-    font-size: 14px;
-    font-weight: 400;
-    color: rgba(255, 255, 255, 0.6);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    margin-bottom: 24px;
-}
 
-.params-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 24px;
-    margin-top: 48px;
-}
-
-.param-card {
-    background: rgba(15, 15, 15, 0.5);
-    backdrop-filter: blur(40px);
-    border-radius: 20px;
-    padding: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: all 0.3s ease;
-}
-
-.param-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(0, 212, 255, 0.3);
-    box-shadow: 0 8px 32px rgba(0, 212, 255, 0.1);
-}
-
-.param-icon {
-    font-size: 36px;
-    margin-bottom: 12px;
-    filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.3));
-}
-
-.param-label {
-    font-size: 13px;
-    color: #808080;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-}
-
-.param-value {
-    font-size: 28px;
-    font-weight: 700;
-    color: #ffffff;
-    margin-bottom: 4px;
-}
-
-.param-unit {
-    font-size: 14px;
-    color: #A0A0A0;
-}
-
-.chart-card {
-    margin-top: 48px;
-    padding: 40px;
-}
-
-.chart-card h3 {
-    font-size: 24px;
-    font-weight: 700;
-    color: #ffffff;
-    margin-bottom: 24px;
-    text-align: center;
-}
-
-.chart-placeholder {
-    width: 100%;
-    height: 400px;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    border: 2px dashed rgba(255, 255, 255, 0.1);
-}
-
-.chart-placeholder-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
-    opacity: 0.3;
-}
-
-.chart-placeholder-text {
-    font-size: 16px;
-    color: #808080;
-}
 
 .results-actions {
     display: flex;
@@ -1297,17 +1138,11 @@ body {
     .spinner-ring-2 { width: 90px; height: 90px; }
     .spinner-ring-3 { width: 60px; height: 60px; }
     .loading-text { font-size: 22px; }
-    .analysis-icons { gap: 20px; }
-    .analysis-icon { font-size: 30px; }
     .raw-data-content { padding: 24px; }
     .nebula { filter: blur(60px); }
     .energy-wave { width: 200px; height: 200px; }
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
 
 .error-banner {
     display: none;
@@ -1674,20 +1509,21 @@ body {
    ============================================================ */
 .result-main-grid {
     display: grid;
-    grid-template-columns: 268px 1fr;
+    grid-template-columns: 260px 1fr;
     gap: 24px;
     margin-bottom: 24px;
-    align-items: start;
+    align-items: stretch;
 }
 
 /* ============================================================
    PREDICTION CARD
    ============================================================ */
 .prediction-card {
-    padding: 32px;
+    padding: 28px 32px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 0;
 }
 
 .prediction-header {
@@ -2029,4 +1865,23 @@ body {
         flex-direction: column;
         text-align: center;
     }
+}
+
+/* Card slide-fade transitions using native CSS transitions */
+.card-enter-right {
+    opacity: 0 !important;
+    transform: translateX(20px) !important;
+    transition: none !important;
+}
+
+.card-enter-left {
+    opacity: 0 !important;
+    transform: translateX(-20px) !important;
+    transition: none !important;
+}
+
+.card-exit {
+    opacity: 0 !important;
+    transform: translateY(6px) scale(0.98) !important;
+    transition: opacity 0.15s ease, transform 0.15s ease !important;
 }

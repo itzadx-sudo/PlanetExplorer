@@ -1,37 +1,47 @@
+const CIRCUMFERENCE = 2 * Math.PI * 90;
+
+const LABELS = {
+    CONFIRMED: 'CONFIRMED',
+    CANDIDATE: 'CANDIDATE',
+    FP: 'FALSE POSITIVE'
+};
+
 let currentAnalysisData = null;
 let currentFileName = '';
 let allDataRows = [];
 let filteredRows = [];
 let currentRowIndex = 0;
-let activeFilter = 'all';
 
 const loadingStages = [
-    "Initializing AI models...",
-    "Loading Kepler dataset...",
-    "Calculating orbital parameters...",
-    "Finalizing results..."
+    'Initializing AI models...',
+    'Loading Kepler dataset...',
+    'Calculating orbital parameters...',
+    'Finalizing results...'
 ];
 let currentStageIndex = 0;
 
+let activePill = null;
+let resultsSectionEl = null;
+
+/* ── Particles ────────────────────────────────────────────── */
 function createParticles() {
-    const background = document.getElementById('animatedBg');
-    const particleCount = 50;
-    for (let i = 0; i < particleCount; i++) {
-        const particle = document.createElement('div');
-        particle.className = 'particle';
-        const size = Math.random() * 3 + 1;
-        const colors = ['0, 212, 255', '123, 97, 255', '255, 107, 157'];
+    const bg = document.getElementById('animatedBg');
+    const colors = ['0, 212, 255', '123, 97, 255', '255, 107, 157'];
+    for (let i = 0; i < 50; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
         const c = colors[Math.floor(Math.random() * colors.length)];
-        particle.style.cssText = `
-            width:${size}px; height:${size}px;
+        p.style.cssText = `
+            width:${Math.random() * 3 + 1}px; height:${Math.random() * 3 + 1}px;
             left:${Math.random() * window.innerWidth}px;
-            background:rgba(${c},0.6);
-            color:rgba(${c},0.8);
+            background:rgba(${c},0.6); color:rgba(${c},0.8);
             animation-duration:${Math.random() * 25 + 15}s;
             animation-delay:${Math.random() * 15}s;
         `;
-        background.appendChild(particle);
+        bg.appendChild(p);
     }
+    activePill = document.querySelector('.filter-pill[data-filter="all"]');
+    resultsSectionEl = document.getElementById('resultsSection');
 }
 
 /* ── API call ─────────────────────────────────────────────── */
@@ -46,19 +56,18 @@ async function analyzeDataset() {
         const json = await response.json();
         if (!json.success) throw new Error(json.error || 'Analysis failed');
 
+        const timestamp = new Date().toISOString();
         allDataRows = json.predictions.map(pred => ({
-            exoplanet_detected: pred.prediction === 'CONFIRMED',
-            confidence: pred.confidence,
+            confidence: Math.min(pred.confidence, 0.999),
             prediction_label: pred.prediction,
             confidence_level: pred.confidence_level,
             margin: pred.margin,
             row: pred.row,
-            timestamp: new Date().toISOString()
+            timestamp
         }));
 
         currentFileName = json.dataset || 'kepler_test.csv';
-        activeFilter = 'all';
-        filteredRows = [...allDataRows];
+        filteredRows = allDataRows;
         currentRowIndex = 0;
 
         updateSummaryCounts();
@@ -79,17 +88,20 @@ function displayResults(data, fileName) {
     currentAnalysisData = data;
     hideLoading();
 
-    /* filename */
     document.getElementById('resultsFilename').textContent = fileName;
 
-    /* confidence circle */
-    const pct = Math.round(data.confidence * 100);
-    document.getElementById('confidenceValue').textContent = pct + '%';
-    const circumference = 2 * Math.PI * 90;
-    document.getElementById('confidenceCircle').style.strokeDashoffset =
-        circumference - (pct / 100) * circumference;
+    let pctVal = data.confidence * 100;
+    let displayPct = '';
+    if (pctVal >= 99.0) {
+        displayPct = '>99';
+    } else {
+        displayPct = Math.round(pctVal).toString();
+    }
 
-    /* confidence level badge */
+    document.getElementById('confidenceValue').textContent = displayPct + '%';
+    document.getElementById('confidenceCircle').style.strokeDashoffset =
+        CIRCUMFERENCE - (Math.min(pctVal, 99.0) / 100) * CIRCUMFERENCE;
+
     const lvlBadge = document.getElementById('confidenceLevelBadge');
     if (lvlBadge) {
         const lvl = data.confidence_level || 'Medium';
@@ -97,7 +109,6 @@ function displayResults(data, fileName) {
         lvlBadge.className = 'confidence-level-badge ' + levelClass(lvl);
     }
 
-    /* prediction badge */
     const predBadge = document.getElementById('predictionBadge');
     if (predBadge) {
         const pred = data.prediction_label || '—';
@@ -105,19 +116,16 @@ function displayResults(data, fileName) {
         predBadge.className = 'prediction-badge ' + predClass(pred);
     }
 
-    /* meta cells */
-    setText('marginValue',    data.margin     != null ? (data.margin * 100).toFixed(1) + '%' : '—');
+    setText('marginValue',    data.margin != null ? (data.margin * 100).toFixed(1) + '%' : '—');
     setText('levelValue',     data.confidence_level || '—');
     setText('rowValue',       data.row != null ? `#${data.row}` : '—');
     setText('timestampValue', data.timestamp
         ? new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         : '—');
 
-    /* description */
     const descEl = document.getElementById('predictionDescription');
     if (descEl) descEl.textContent = predDescription(data.prediction_label);
 
-    /* navigation */
     const total = filteredRows.length;
     setText('rowIndicator', `${currentRowIndex + 1} / ${total}`);
     const prevBtn = document.getElementById('prevBtn');
@@ -128,12 +136,14 @@ function displayResults(data, fileName) {
     showSection('resultsSection');
 }
 
-/* ── Summary counts (run once after data loads) ───────────── */
+/* ── Summary counts ───────────────────────────────────────── */
 function updateSummaryCounts() {
-    const confirmed  = allDataRows.filter(r => r.prediction_label === 'CONFIRMED').length;
-    const candidate  = allDataRows.filter(r => r.prediction_label === 'CANDIDATE').length;
-    const fp         = allDataRows.filter(r => r.prediction_label === 'FALSE POSITIVE').length;
-
+    let confirmed = 0, candidate = 0, fp = 0;
+    for (const r of allDataRows) {
+        if      (r.prediction_label === LABELS.CONFIRMED) confirmed++;
+        else if (r.prediction_label === LABELS.CANDIDATE) candidate++;
+        else if (r.prediction_label === LABELS.FP)        fp++;
+    }
     setText('confirmedCount', confirmed);
     setText('candidateCount', candidate);
     setText('fpCount',        fp);
@@ -142,42 +152,67 @@ function updateSummaryCounts() {
 
 /* ── Filtering ────────────────────────────────────────────── */
 function setFilter(filter) {
-    activeFilter = filter;
     filteredRows = filter === 'all'
-        ? [...allDataRows]
+        ? allDataRows
         : allDataRows.filter(r => r.prediction_label === filter);
 
     currentRowIndex = 0;
     setFilterPillActive(filter);
 
     if (filteredRows.length > 0) {
-        displayResults(filteredRows[0], currentFileName);
+        updateResultsWithTransition(0, 'next');
     } else {
         setText('rowIndicator', '0 / 0');
     }
 }
 
 function setFilterPillActive(filter) {
-    document.querySelectorAll('.filter-pill').forEach(pill => {
-        pill.classList.remove('active');
-        if (pill.dataset.filter === filter) pill.classList.add('active');
-    });
+    if (activePill) activePill.classList.remove('active');
+    activePill = document.querySelector(`.filter-pill[data-filter="${filter}"]`);
+    if (activePill) activePill.classList.add('active');
 }
 
 /* ── Navigation ───────────────────────────────────────────── */
-function nextRow() {
-    if (currentRowIndex < filteredRows.length - 1) {
-        currentRowIndex++;
+function updateResultsWithTransition(nextIndex, direction) {
+    if (nextIndex < 0 || nextIndex >= filteredRows.length) return;
+    
+    const cards = document.querySelectorAll('.result-main-grid .glass-card');
+    cards.forEach(card => {
+        card.classList.remove('card-enter-right', 'card-enter-left');
+        card.classList.add('card-exit');
+    });
+    
+    setTimeout(() => {
+        currentRowIndex = nextIndex;
         displayResults(filteredRows[currentRowIndex], currentFileName);
-    }
+        
+        const currentCards = document.querySelectorAll('.result-main-grid .glass-card');
+        currentCards.forEach(card => {
+            card.classList.remove('card-exit');
+            
+            // Set starting position instantly
+            if (direction === 'next') {
+                card.classList.add('card-enter-right');
+            } else {
+                card.classList.add('card-enter-left');
+            }
+            
+            // Force reflow
+            void card.offsetWidth;
+            
+            // Remove start class to trigger smooth transition back to default state
+            card.classList.remove('card-enter-right', 'card-enter-left');
+        });
+    }, 150);
 }
 
-function previousRow() {
-    if (currentRowIndex > 0) {
-        currentRowIndex--;
-        displayResults(filteredRows[currentRowIndex], currentFileName);
-    }
+function navigateRow(delta) {
+    const next = currentRowIndex + delta;
+    updateResultsWithTransition(next, delta > 0 ? 'next' : 'prev');
 }
+
+function nextRow()     { navigateRow(+1); }
+function previousRow() { navigateRow(-1); }
 
 function jumpToRow() {
     const input = document.getElementById('jumpInput');
@@ -186,38 +221,38 @@ function jumpToRow() {
         showError(`Enter a number between 1 and ${filteredRows.length}`);
         return;
     }
-    currentRowIndex = n - 1;
-    displayResults(filteredRows[currentRowIndex], currentFileName);
+    const next = n - 1;
+    updateResultsWithTransition(next, next >= currentRowIndex ? 'next' : 'prev');
     input.value = '';
 }
 
 /* ── Section switching ────────────────────────────────────── */
 function showSection(id) {
+    const section = document.getElementById(id);
+    if (section.classList.contains('active')) return;
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
+    section.classList.add('active');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function analyzeAnother() {
-    showSection('homeSection');
-}
+function analyzeAnother() { showSection('homeSection'); }
 
 /* ── Loading ──────────────────────────────────────────────── */
 function showLoading() {
     document.getElementById('loadingScreen').classList.add('active');
     currentStageIndex = 0;
-    updateLoadingStage();
+    const stageEl = document.getElementById('loadingStage');
+    updateLoadingStage(stageEl);
 }
 
 function hideLoading() {
     document.getElementById('loadingScreen').classList.remove('active');
 }
 
-function updateLoadingStage() {
-    const el = document.getElementById('loadingStage');
+function updateLoadingStage(el) {
     if (currentStageIndex < loadingStages.length) {
         el.textContent = loadingStages[currentStageIndex++];
-        setTimeout(updateLoadingStage, 1200);
+        setTimeout(() => updateLoadingStage(el), 1200);
     }
 }
 
@@ -266,9 +301,8 @@ function downloadAllReport() {
 }
 
 function downloadText(content, filename) {
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+    const a   = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.appendChild(a);
     a.click();
     URL.revokeObjectURL(url);
@@ -309,15 +343,15 @@ function levelClass(lvl) {
 }
 
 function predClass(pred) {
-    return pred === 'CONFIRMED' ? 'badge-confirmed'
-         : pred === 'CANDIDATE' ? 'badge-candidate'
-         : 'badge-fp';
+    if (pred === LABELS.CONFIRMED) return 'badge-confirmed';
+    if (pred === LABELS.CANDIDATE) return 'badge-candidate';
+    return 'badge-fp';
 }
 
 function predDescription(pred) {
-    if (pred === 'CONFIRMED')
+    if (pred === LABELS.CONFIRMED)
         return 'This Kepler Object of Interest has been classified as a confirmed exoplanet with high statistical certainty based on orbital and photometric parameters.';
-    if (pred === 'CANDIDATE')
+    if (pred === LABELS.CANDIDATE)
         return 'This KOI is a viable exoplanet candidate. Additional follow-up observations are recommended to confirm its planetary nature.';
     return 'This signal has been classified as a false positive — likely caused by stellar variability, an eclipsing binary, or instrumental artefacts.';
 }
@@ -328,9 +362,10 @@ document.getElementById('rawDataModal').addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeRawDataModal();
-    if (e.key === 'ArrowRight' && document.getElementById('resultsSection').classList.contains('active')) nextRow();
-    if (e.key === 'ArrowLeft'  && document.getElementById('resultsSection').classList.contains('active')) previousRow();
+    if (e.key === 'Escape') { closeRawDataModal(); return; }
+    if (!resultsSectionEl?.classList.contains('active')) return;
+    if (e.key === 'ArrowRight') nextRow();
+    if (e.key === 'ArrowLeft')  previousRow();
 });
 
 document.getElementById('jumpInput')?.addEventListener('keydown', e => {

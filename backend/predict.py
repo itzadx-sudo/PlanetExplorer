@@ -94,6 +94,7 @@ def predict(
     df: pd.DataFrame,
     class_names: list[str],
     device: str = "cpu",
+    temperature: float = 2.0,
 ) -> pd.DataFrame:
     X = preprocessor.transform_X(df).astype(np.float32)
 
@@ -102,10 +103,14 @@ def predict(
         import mlx.nn as mlx_nn
 
         logits = model(mx.array(X))
+        if temperature != 1.0:
+            logits = logits / temperature
         probs = np.array(mlx_nn.softmax(logits, axis=-1).tolist())
     else:
         with torch.no_grad():
             logits = model(torch.from_numpy(X).to(device))
+            if temperature != 1.0:
+                logits = logits / temperature
             probs = torch.softmax(logits, dim=1).cpu().numpy()
 
     pred_idx = probs.argmax(axis=1)
@@ -125,10 +130,11 @@ def predict_csv(
     checkpoint_path: str | Path,
     input_csv: str | Path,
     output_csv: str | Path | None = None,
+    temperature: float = 2.0,
 ) -> pd.DataFrame:
     model, preprocessor, class_names, device = load_model(checkpoint_path)
     df = pd.read_csv(input_csv)
-    results = predict(model, preprocessor, df, class_names, device=device)
+    results = predict(model, preprocessor, df, class_names, device=device, temperature=temperature)
     if output_csv is not None:
         results.to_csv(output_csv, index=False)
     return results

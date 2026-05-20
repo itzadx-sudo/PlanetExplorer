@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+*+from+cumulative&format=csv"
 
 KEEP_COLS = [
+    "koi_fpflag_nt", "koi_fpflag_ss", "koi_fpflag_co", "koi_fpflag_ec",
     "koi_dicco_msky", "koi_dikco_msky", "koi_prad", "koi_smet_err2", "koi_max_mult_ev", "koi_model_snr",
     "koi_steff_err1", "koi_smet_err1", "koi_prad_err2", "koi_steff_err2", "koi_ror", "koi_prad_err1",
     "koi_duration_err1", "koi_duration_err2", "koi_fittype_LS+MCMC", "koi_count", "koi_fwm_sdec_err",
@@ -45,10 +46,8 @@ def preprocess_data(base_dir: Path = Path(".")):
     cols_to_keep = ["kepid", "koi_disposition"] + KEEP_COLS
     df = df[[c for c in cols_to_keep if c in df.columns]]
 
-    cols_to_drop = df.columns[df.isnull().mean() > 0.0].tolist()
-    if cols_to_drop:
-        print(f"Dropping columns with missing values: {cols_to_drop}")
-        df = df.drop(columns=cols_to_drop)
+    # Keep all features; missing values will be handled by the preprocessor's imputer
+    pass
 
     train_df, test_df = train_test_split(
         df, test_size=0.10, stratify=df["koi_disposition"], random_state=42

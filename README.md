@@ -1,123 +1,50 @@
-PlanetExplorer — Exoplanet Candidate Classifier
+# PlanetExplorer
 
-Team: Five Guys
-Challenge: NASA Space Apps Challenge 2025 — A World Away: Hunting for Exoplanets with AI
-Mission Dataset: Kepler KOI (Kepler Objects of Interest) — NASA Exoplanet Archive
+When a planet passes in front of its star, it can leave a small dip in the star’s brightness. Other effects can produce similar signals. For the 2025 NASA Space Apps Challenge, Team Five Guys built PlanetExplorer to explore how a model classifies signals already catalogued by the Kepler mission. The browser interface is called **Lumina**.
 
-Python 3.10 is required
+## How it works
 
-Project Overview
-PlanetExplorer is an AI-driven exoplanet classification system designed to help astronomers and citizen scientists identify likely exoplanets in large space telescope datasets. The system uses curated Kepler mission tabular data and a custom Multilayer Perceptron (MLP) neural network built in PyTorch to classify Kepler Objects of Interest (KOIs) into CONFIRMED planets, CANDIDATE planets, and FALSE POSITIVES.
-Our solution transforms curated NASA data into an interpretable model that can support discovery and outreach while remaining efficient enough to run on laptops or cloud notebooks.
+### Start with Kepler’s observations
 
-Features
+Open Lumina and select **Analyze Dataset**. It runs the classifier on a held-out set of Kepler Objects of Interest (KOIs) from the NASA Exoplanet Archive. Each row includes measurements such as how much the star dimmed during a transit, along with the archive’s existing false-positive flags.
 
-Robust AI Model: Fully connected MLP with over 2.6M parameters and class-weighted loss to handle imbalanced data.
+![Lumina’s analysis screen while the Kepler dataset loads](./docs/images/lumina-analysis.jpg)
 
-NASA-backed Inputs: 30 astrophysical and transit-fit features curated from the Kepler mission (0% missing data).
+### See how the model classified the dataset
 
-Fast and Reproducible: Deterministic training with fixed seeds and early stopping.
+The results dashboard counts how many rows the model labelled **Confirmed**, **Candidate**, or **False Positive**. Filter to **Candidate** to browse those predictions, or use the row controls to move through the full set.
 
-Interpretable Outputs: Predictions include probability scores and confidence levels (High/Medium/Low).
+### Look closer at a prediction
 
-Easy to Use: Jupyter-based pipeline with optional lightweight Gradio interface for interactive predictions.
+Each row shows the model’s confidence and the gap between its two highest class scores. The **High**, **Medium**, and **Low** labels use both numbers, so you can see when the top two predictions were close. Download a text report for the current row or export all predictions as a CSV.
 
-Extensible: Ready for alternative models such as gradient-boosted trees, random forests, or CNNs on raw light curves.
+![Lumina’s results dashboard showing class totals, a candidate prediction with its confidence and margin, and export controls](./docs/images/lumina-results.jpg)
 
-Dataset and Preprocessing
-Sources: NASA Exoplanet Archive — Kepler Objects of Interest.
-Files Used:
+## Quick start
 
-kepler_top_features_0pct_missing_train90.csv — 6,530 rows, curated training and validation set
+Use **Python 3.11** with pip and an internet connection for the first data download. Run these commands from a terminal on macOS or Linux.
 
-kepler_top_features_0pct_missing_test10.csv — 726 rows, held-out test set
-
-Classes:
-
-CONFIRMED (approximately 36%)
-
-CANDIDATE (approximately 20%)
-
-FALSE POSITIVE (approximately 44%)
-
-Feature Handling:
-
-30 numeric features such as koi_depth, koi_ror, koi_model_snr
-
-Identifier kepid dropped before training to avoid data leakage
-
-StandardScaler applied for normalization
-
-Label encoding used for target classes
-
-Model Architecture
-MLP Classifier (PyTorch):
-Input (30) → Linear(2048) → ReLU → Linear(1024) → ReLU → Linear(512) → ReLU → Linear(3) → Softmax
-
-Loss: Weighted Cross-Entropy
-Optimizer: AdamW (learning rate 1e-6, weight decay 1e-6)
-Batch Size: 96
-Epochs: Up to 600 with early stopping patience of 40
-Hardware: CPU and GPU compatible
-
-Artifacts saved for reproducibility:
-
-Minimal checkpoint: mlp_kepler_<timestamp>_min.pt
-
-Full checkpoint: mlp_kepler_<timestamp>_full.pt
-
-Preprocessing pipeline: scaler, label encoder, and feature order
-
-Evaluation
-Validation split: Stratified 85/15 from training pool
-Metrics: Accuracy, Macro-F1, Precision/Recall per class, Confusion Matrix
-Confidence Levels:
-
-High: probability ≥ 0.90 and margin ≥ 0.30
-
-Medium: probability ≥ 0.75 and margin ≥ 0.15
-
-Low: otherwise
-
-Weighted loss improved detection of the minority CANDIDATE class while maintaining strong CONFIRMED recall.
-
-Quick Start
-
-Environment Setup
-Clone the repository and install requirements:
-git clone https://github.com/
-<your-repo>/PlanetExplorer.git
+```bash
+git clone https://github.com/itzadx-sudo/PlanetExplorer.git
 cd PlanetExplorer
-pip install -r requirements.txt
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python data/download.py
+python model/train.py
+python web.py
+```
 
-Train or Load Model
-Train using the prepared dataset:
-python train.py --train-file kepler_top_features_0pct_missing_train90.csv
-(or use the provided pre-trained mlp_kepler_<timestamp>_min.pt)
+Training saves a checkpoint in `artifacts/`. The launcher loads the newest checkpoint in that folder and opens [Lumina on port 8080](http://localhost:8080). For later sessions, activate the same environment and run `python web.py` again. Press **Ctrl+C** to stop the server.
 
-Run Inference
-python predict.py --input your_data.csv --weights artifacts/mlp_kepler_min.pt
-Generates predictions.csv with predicted class and probabilities.
+## Behind the predictions
 
-Interactive Demo (optional)
-python app.py
-Launches a simple web interface for file upload and instant predictions.
+[The data script](data/download.py) downloads the cumulative KOI table and uses a stratified 90/10 train/test split. [The training script](model/train.py) holds out part of the training data for validation, fills missing feature values with training-set medians, and scales the inputs. It trains a residual multilayer perceptron with a class-weighted loss and chooses the checkpoint based on validation macro F1.
 
-Future Work
+[The Flask app](backend/app.py) serves the Lumina interface and runs inference on the test split. The model learns from Kepler’s catalogue dispositions, which are the reference labels for this project.
 
-Integration of gradient boosted trees (XGBoost) for interpretability.
+## Credits
 
-Incorporation of 1D-CNN light curve analysis for end-to-end detection.
+Built by **Team Five Guys** for the **2025 NASA Space Apps Challenge**, *A World Away: Hunting for Exoplanets with AI*. Data comes from the [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/).
 
-Model ensembling for improved recall on borderline candidates.
-
-Integration with NASA’s Exoplanet Archive API for automated updates.
-
-License
-MIT License — free to use and modify for educational and research purposes.
-
-Acknowledgments
-
-NASA Exoplanet Archive and Kepler Mission Data for publicly accessible curated datasets.
-
-NASA Space Apps Challenge 2025 for inspiring global collaboration in space science and artificial intelligence.
+[Apache License 2.0](LICENSE)

@@ -42,7 +42,3 @@ Training saves a checkpoint in `artifacts/`. The launcher loads the newest check
 [The data script](data/download.py) downloads the cumulative KOI table and uses a stratified 90/10 train/test split. [The training script](model/train.py) holds out part of the training data for validation, fills missing feature values with training-set medians, and scales the inputs. It trains a residual multilayer perceptron with a class-weighted loss and chooses the checkpoint based on validation macro F1.
 
 [The Flask app](backend/app.py) serves the Lumina interface and runs inference on the test split. The model learns from Kepler’s catalogue dispositions, which are the reference labels for this project.
-
-## License
-
-[Apache License 2.0](LICENSE)

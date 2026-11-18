@@ -43,8 +43,6 @@ Training saves a checkpoint in `artifacts/`. The launcher loads the newest check
 
 [The Flask app](backend/app.py) serves the Lumina interface and runs inference on the test split. The model learns from Kepler’s catalogue dispositions, which are the reference labels for this project.
 
-## Credits
-
-Built by **Team Five Guys** for the **2025 NASA Space Apps Challenge**, *A World Away: Hunting for Exoplanets with AI*. Data comes from the [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/).
+## License
 
 [Apache License 2.0](LICENSE)
